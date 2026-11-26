@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/transithub_test
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/transithub_test}
     username: ${DB_USERNAME:transithub_app}
     password: ${DB_PASSWORD}
 

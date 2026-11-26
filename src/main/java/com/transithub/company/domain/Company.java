@@ -4,19 +4,24 @@ package com.transithub.company.domain;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.data.domain.Persistable;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "companies")
-public class Company {
+public class Company implements Persistable<UUID> {
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
@@ -54,6 +59,14 @@ public class Company {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /**
+     * The identifier is assigned in the constructor, so Spring Data cannot use
+     * a null id to detect new entities. Without this flag every save of a new
+     * company would run a SELECT (merge) before the INSERT.
+     */
+    @Transient
+    private boolean isNew = true;
 
     protected Company() {
         // Required by JPA.
@@ -93,6 +106,18 @@ public class Company {
         updatedAt = Instant.now();
     }
 
+    @PostPersist
+    @PostLoad
+    protected void markNotNew() {
+        isNew = false;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @Override
     public UUID getId() {
         return id;
     }
