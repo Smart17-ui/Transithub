@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.transithub.identity.Authorization;
 import com.transithub.identity.Permission;
 import com.transithub.identity.StaffDirectory;
+import com.transithub.identity.StaffMember;
 import com.transithub.onboarding.domain.CompanyRegistration;
 import com.transithub.onboarding.domain.Evidence;
 import com.transithub.onboarding.domain.EvidenceType;
@@ -39,7 +41,13 @@ public class VerificationService {
 
     public enum AssessmentOutcome { ACCEPTED, INSUFFICIENT, INVALID }
 
-    public enum RecommendationType { APPROVE, REJECT }
+    /** The official registers a company's numbers are checked against. */
+    public enum RegistrySource { PACRA, RTSA, ZRA, OTHER }
+
+    public enum RegistryResult { MATCH, MISMATCH, NOT_FOUND, COULD_NOT_CHECK }
+
+    /** Registers whose check must show MATCH before approval: the company exists and may carry passengers. */
+    static final List<RegistrySource> REQUIRED_FOR_APPROVAL = List.of(RegistrySource.PACRA, RegistrySource.RTSA);
 
     public enum DuplicateReview { NOT_DUPLICATE, DUPLICATE }
 
@@ -49,7 +57,10 @@ public class VerificationService {
                           List<VerificationRepository.Assessment> assessments,
                           List<VerificationRepository.InformationRequest> informationRequests,
                           List<VerificationRepository.Recommendation> recommendations,
-                          List<UUID> unreviewedDuplicateFlags) {
+                          List<UUID> unreviewedDuplicateFlags,
+                          List<VerificationRepository.RegistryCheck> registryChecks,
+                          @Schema(description = "What still blocks approval; empty when the checker may approve.")
+                          List<String> outstandingForApproval) {
     }
 
     private final RegistrationService registrations;
@@ -79,16 +90,20 @@ public class VerificationService {
      * Verification Officer who took no part in the registration.
      */
     public CompanyRegistration assign(UUID id, long version, UUID verifierId, @Nullable String reason) {
-        authorization.require(Permission.REGISTRATION_ASSIGN_VERIFICATION);
+        boolean takingItThemselves = authorization.currentUserId().filter(verifierId::equals).isPresent()
+                && authorization.has(Permission.REGISTRATION_VERIFY);
+        if (!takingItThemselves) {
+            authorization.require(Permission.REGISTRATION_ASSIGN_VERIFICATION);
+        }
         CompanyRegistration registration = registrations.editable(id, version);
 
         if (!staff.holdsPlatformPermission(verifierId, Permission.REGISTRATION_VERIFY)) {
-            throw new InvalidRegistrationInputException("The chosen user is not an active Verification Officer.");
+            throw new InvalidRegistrationInputException("The selected user is not an active Compliance Officer.");
         }
         if (verification.participants(id).contains(verifierId.toString())) {
             throw new SeparationOfDutiesException(
-                    "The verifier must not have captured, edited, uploaded evidence for or recorded signatures on "
-                            + "this registration.");
+                    "The Compliance Officer must not have prepared, edited, uploaded documents for or recorded "
+                            + "declarations on this application.");
         }
 
         String actor = currentActor.id();
@@ -100,6 +115,19 @@ public class VerificationService {
         notifications.enqueue(verifierId.toString(), "registration.verification-assigned",
                 Map.of("reference", saved.getReference()), null);
         return saved;
+    }
+
+    /**
+     * Who the supervisor may assign: active Verification Officers who took
+     * no part in the registration, the same two checks {@link #assign} makes.
+     */
+    public List<StaffMember> verifierCandidates(UUID id) {
+        authorization.require(Permission.REGISTRATION_ASSIGN_VERIFICATION);
+        registrations.visible(id);
+        Set<String> participants = verification.participants(id);
+        return staff.platformHoldersOf(Permission.REGISTRATION_VERIFY).stream()
+                .filter(member -> !participants.contains(member.id().toString()))
+                .toList();
     }
 
     /** AC-R1-VER-03: the verifier's assessment of one document, with findings. */
@@ -196,32 +224,65 @@ public class VerificationService {
         return saved;
     }
 
+    /** A checker picks a submitted registration up from the queue and becomes its checker. */
+    public CompanyRegistration take(UUID id, long version) {
+        UUID me = authorization.currentUserId()
+                .orElseThrow(() -> new org.springframework.security.access.AccessDeniedException("Not a TransitHub user"));
+        authorization.require(Permission.REGISTRATION_VERIFY);
+        return assign(id, version, me, "Taken from the queue");
+    }
+
     /**
-     * AC-R1-VER-07: verification complete, with a recommendation and reasons.
-     * Every current document must be assessed and every possible duplicate
-     * reviewed first.
+     * The checker records what an official register showed for one of the
+     * company's numbers (PACRA registration, RTSA licence, ZRA tax clearance).
+     * Insert-only; a newer check of the same register supersedes the older one.
      */
-    public CompanyRegistration recommend(UUID id, long version, RecommendationType recommendation, String reasons) {
-        authorization.require(Permission.REGISTRATION_RECOMMEND);
+    public CompanyRegistration recordRegistryCheck(UUID id, long version, RegistrySource source, String reference,
+                                                   RegistryResult result, @Nullable String note) {
+        authorization.require(Permission.REGISTRATION_VERIFY);
         CompanyRegistration registration = registrations.editable(id, version);
-
-        Set<UUID> assessed = verification.currentAssessments(id).stream()
-                .map(VerificationRepository.Assessment::evidenceId)
-                .collect(Collectors.toSet());
-        List<String> outstanding = new ArrayList<>();
-        registration.activeEvidence().stream()
-                .filter(item -> !assessed.contains(item.getId()))
-                .forEach(item -> outstanding.add("evidence[" + item.getId() + "].assessment"));
-        verification.unreviewedDuplicateFlags(id)
-                .forEach(flagId -> outstanding.add("duplicate[" + flagId + "].review"));
-
+        if (result != RegistryResult.MATCH && (note == null || note.isBlank())) {
+            throw new InvalidRegistrationInputException("A note is required when the registry result is not a match.");
+        }
         String actor = currentActor.id();
         Instant now = clock.instant();
-        registration.recommend(outstanding, actor, now);
-        CompanyRegistration saved = registrations.saveCommand(registration, "registration.recommended",
-                Map.of("recommendation", recommendation.name()));
-        verification.recommend(id, recommendation.name(), reasons, actor, now);
+        registration.recordVerificationWork(actor, now);
+        CompanyRegistration saved = registrations.saveCommand(registration, "registration.registry-checked",
+                Map.of("source", source.name(), "reference", reference.strip(), "result", result.name()));
+        verification.recordRegistryCheck(id, source.name(), reference.strip(), result.name(),
+                note == null || note.isBlank() ? null : note.strip(), actor, now);
         return saved;
+    }
+
+    /**
+     * What still blocks approval: every current document assessed and
+     * accepted, every possible duplicate reviewed, and the latest PACRA and
+     * RTSA checks showing a match.
+     */
+    List<String> outstandingForApproval(CompanyRegistration registration) {
+        UUID id = registration.getId();
+        Map<UUID, String> outcomes = verification.currentAssessments(id).stream()
+                .collect(Collectors.toMap(VerificationRepository.Assessment::evidenceId,
+                        VerificationRepository.Assessment::outcome, (a, b) -> b));
+        List<String> outstanding = new ArrayList<>();
+        for (Evidence item : registration.activeEvidence()) {
+            String outcome = outcomes.get(item.getId());
+            if (outcome == null) {
+                outstanding.add("evidence[" + item.getId() + "].assessment");
+            } else if (!AssessmentOutcome.ACCEPTED.name().equals(outcome)) {
+                outstanding.add("evidence[" + item.getId() + "].notAccepted");
+            }
+        }
+        verification.unreviewedDuplicateFlags(id).forEach(flagId -> outstanding.add("duplicate[" + flagId + "].review"));
+
+        Map<String, String> latest = new java.util.HashMap<>();
+        verification.registryChecks(id).forEach(check -> latest.put(check.source(), check.result()));
+        for (RegistrySource source : REQUIRED_FOR_APPROVAL) {
+            if (!RegistryResult.MATCH.name().equals(latest.get(source.name()))) {
+                outstanding.add("registryCheck." + source.name());
+            }
+        }
+        return outstanding;
     }
 
     @Transactional(readOnly = true)
@@ -230,6 +291,7 @@ public class VerificationService {
         CompanyRegistration registration = registrations.visible(id);
         return new Summary(registration.getAssignedVerifier(), verification.assignments(id),
                 verification.currentAssessments(id), verification.informationRequests(id),
-                verification.recommendations(id), verification.unreviewedDuplicateFlags(id));
+                verification.recommendations(id), verification.unreviewedDuplicateFlags(id),
+                verification.registryChecks(id), outstandingForApproval(registration));
     }
 }

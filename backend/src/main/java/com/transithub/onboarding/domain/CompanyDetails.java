@@ -19,6 +19,7 @@ public record CompanyDetails(
         @Column(name = "legal_name") @Nullable String legalName,
         @Column(name = "trading_name") @Nullable String tradingName,
         @Column(name = "registration_number") @Nullable String registrationNumber,
+        @Column(name = "operating_licence_number") @Nullable String operatingLicenceNumber,
         @Column(name = "business_type") @Nullable String businessType,
         @Column(name = "province") @Nullable String province,
         @Column(name = "district") @Nullable String district,
@@ -33,15 +34,16 @@ public record CompanyDetails(
      * [check rule text: definition of material change, BR-ONB-013–017]
      */
     static final Set<String> MATERIAL_FIELDS =
-            Set.of("legalName", "tradingName", "registrationNumber", "businessType");
+            Set.of("legalName", "tradingName", "registrationNumber", "operatingLicenceNumber", "businessType");
 
     public static CompanyDetails empty() {
-        return new CompanyDetails(null, null, null, null, null, null, null, null, null, null);
+        return new CompanyDetails(null, null, null, null, null, null, null, null, null, null, null);
     }
 
     /** Trims values and turns blanks into {@code null}, so "" and null never differ. */
     public CompanyDetails normalised() {
         return new CompanyDetails(clean(legalName), clean(tradingName), clean(registrationNumber),
+                clean(operatingLicenceNumber),
                 clean(businessType), clean(province), clean(district), clean(physicalAddress),
                 clean(postalAddress), clean(contactEmail), clean(contactPhone));
     }
@@ -52,6 +54,7 @@ public record CompanyDetails(
         fields.put("legalName", legalName);
         fields.put("tradingName", tradingName);
         fields.put("registrationNumber", registrationNumber);
+        fields.put("operatingLicenceNumber", operatingLicenceNumber);
         fields.put("businessType", businessType);
         fields.put("province", province);
         fields.put("district", district);

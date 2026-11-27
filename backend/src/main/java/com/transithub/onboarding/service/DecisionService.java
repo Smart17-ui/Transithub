@@ -3,14 +3,11 @@ package com.transithub.onboarding.service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
-import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +17,6 @@ import com.transithub.identity.Permission;
 import com.transithub.onboarding.domain.Company;
 import com.transithub.onboarding.domain.CompanyRegistration;
 import com.transithub.onboarding.domain.Representative;
-import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
-import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
 import com.transithub.onboarding.repository.CompanyRepository;
 import com.transithub.onboarding.repository.DecisionRepository;
 import com.transithub.onboarding.repository.VerificationRepository;
@@ -31,18 +26,18 @@ import com.transithub.shared.security.CurrentActor;
 import com.transithub.shared.security.SeparationOfDutiesException;
 
 /**
- * Independent review of the recommendation, the decision, and company
- * establishment (UC-01.01-11, -12; AC-R1-DEC-01…05, AC-R1-EST-01…02).
+ * The decision and company establishment (UC-01.01-11, -12; AC-R1-DEC-03…05,
+ * AC-R1-EST-01…02). Since 27 Nov 2026 one TransitHub checker verifies and
+ * decides; they must not have taken part in capturing the registration.
  */
 @Service
 @Transactional
 public class DecisionService {
 
-    public enum ReviewOutcome { ENDORSE, CHALLENGE }
-
     public record Approved(CompanyRegistration registration, Company company) {
     }
 
+    /** {@code reviews} holds recommendation reviews from before 27 Nov 2026, kept as history. */
     public record DecisionSummary(List<DecisionRepository.Review> reviews,
                                   Optional<DecisionRepository.Decision> decision) {
     }
@@ -51,6 +46,7 @@ public class DecisionService {
     private final CompanyRepository companies;
     private final DecisionRepository decisions;
     private final VerificationRepository verification;
+    private final VerificationService verificationService;
     private final Authorization authorization;
     private final CurrentActor currentActor;
     private final AuditRecorder audit;
@@ -60,13 +56,15 @@ public class DecisionService {
     private final Duration appealWindow;
 
     DecisionService(RegistrationService registrations, CompanyRepository companies, DecisionRepository decisions,
-                    VerificationRepository verification, Authorization authorization, CurrentActor currentActor,
+                    VerificationRepository verification, VerificationService verificationService,
+                    Authorization authorization, CurrentActor currentActor,
                     AuditRecorder audit, NotificationOutbox notifications, InvitationService invitations, Clock clock,
                     @Value("${transithub.onboarding.appeal-window-days:30}") int appealWindowDays) {
         this.registrations = registrations;
         this.companies = companies;
         this.decisions = decisions;
         this.verification = verification;
+        this.verificationService = verificationService;
         this.authorization = authorization;
         this.currentActor = currentActor;
         this.audit = audit;
@@ -77,56 +75,21 @@ public class DecisionService {
     }
 
     /**
-     * AC-R1-DEC-01, -02: a reviewer who took no part in capture or
-     * verification endorses the recommendation, or challenges it back to
-     * the verifier with comments.
-     */
-    public CompanyRegistration review(UUID id, long version, ReviewOutcome outcome, @Nullable String comments) {
-        authorization.require(Permission.REGISTRATION_REVIEW_RECOMMENDATION);
-        CompanyRegistration registration = registrations.editable(id, version);
-        String actor = currentActor.id();
-        requireIndependent(actor, id, false,
-                "The reviewer must not have captured or verified this registration.");
-
-        UUID recommendationId = decisions.currentRecommendation(id)
-                .orElseThrow(() -> new RegistrationNotFoundException("Current recommendation", id));
-        Instant now = clock.instant();
-
-        if (outcome == ReviewOutcome.CHALLENGE) {
-            if (comments == null || comments.isBlank()) {
-                throw new InvalidRegistrationInputException("A challenge needs comments for the verifier.");
-            }
-            registration.challengeRecommendation(actor, comments, now);
-            decisions.supersedeRecommendation(recommendationId, now);
-            if (registration.getAssignedVerifier() != null) {
-                notifications.enqueue(registration.getAssignedVerifier(), "registration.recommendation-challenged",
-                        Map.of("reference", registration.getReference(), "comments", comments), null);
-            }
-        } else {
-            registration.endorseRecommendation(actor, now);
-        }
-
-        CompanyRegistration saved = registrations.saveCommand(registration,
-                "registration.recommendation-" + (outcome == ReviewOutcome.CHALLENGE ? "challenged" : "endorsed"),
-                Map.of("recommendationId", recommendationId.toString()));
-        decisions.saveReview(id, recommendationId, outcome.name(), comments, actor, now);
-        return saved;
-    }
-
-    /**
-     * AC-R1-DEC-03, AC-R1-EST-01: approval establishes the company with the
-     * next {@code TH-ZM-} code, in the same transaction.
+     * AC-R1-DEC-03, AC-R1-EST-01: the checker approves once every check is
+     * done (documents accepted, duplicates reviewed, PACRA and RTSA matched);
+     * the company is established with the next {@code TH-ZM-} code in the
+     * same transaction.
      */
     public Approved approve(UUID id, long version, String rationale) {
         authorization.require(Permission.REGISTRATION_APPROVE);
         CompanyRegistration registration = registrations.editable(id, version);
         String actor = currentActor.id();
-        requireIndependent(actor, id, true,
-                "The approver must not have captured, verified or reviewed this registration.");
+        requireIndependent(actor, id, "A decision must be made by an officer who was not involved in preparing this application.");
+        List<String> outstanding = verificationService.outstandingForApproval(registration);
         Instant now = clock.instant();
 
         Company company = Company.establish(decisions.nextCompanyCode(), registration);
-        registration.approve(company.getId(), actor, rationale, now);   // checks the endorsement first
+        registration.approve(company.getId(), outstanding, actor, rationale, now);
 
         Company savedCompany = companies.saveAndFlush(company);
         CompanyRegistration saved = registrations.saveCommand(registration, "registration.approved",
@@ -142,13 +105,12 @@ public class DecisionService {
         return new Approved(saved, savedCompany);
     }
 
-    /** AC-R1-DEC-04: rejection with reasons; the appeal window opens. */
+    /** AC-R1-DEC-04: the checker rejects with reasons; the appeal window opens. */
     public CompanyRegistration reject(UUID id, long version, String reasons) {
         authorization.require(Permission.REGISTRATION_REJECT);
         CompanyRegistration registration = registrations.editable(id, version);
         String actor = currentActor.id();
-        requireIndependent(actor, id, true,
-                "The approver must not have captured, verified or reviewed this registration.");
+        requireIndependent(actor, id, "A decision must be made by an officer who was not involved in preparing this application.");
         Instant now = clock.instant();
         Instant appealDeadline = now.plus(appealWindow);
 
@@ -170,14 +132,9 @@ public class DecisionService {
         return new DecisionSummary(decisions.reviews(id), decisions.decision(id));
     }
 
-    /** Capture participants and verifiers may not review; reviewers may not decide either. */
-    private void requireIndependent(String actor, UUID id, boolean includingReviewers, String message) {
-        Set<String> involved = new HashSet<>(verification.participants(id));
-        involved.addAll(decisions.verificationParticipants(id));
-        if (includingReviewers) {
-            involved.addAll(decisions.reviewers(id));
-        }
-        if (involved.contains(actor)) {
+    /** Whoever captured, edited or signed for the registration may not decide on it. */
+    private void requireIndependent(String actor, UUID id, String message) {
+        if (verification.participants(id).contains(actor)) {
             throw new SeparationOfDutiesException(message);
         }
     }

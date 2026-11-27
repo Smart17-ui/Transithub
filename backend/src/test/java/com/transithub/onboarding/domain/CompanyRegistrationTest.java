@@ -111,20 +111,21 @@ class CompanyRegistrationTest {
         List<String> missing = draft(CompanyDetails.empty()).missingForSubmission();
 
         assertTrue(missing.containsAll(List.of(
-                "company.legalName", "company.registrationNumber", "company.businessType",
-                "company.district", "company.physicalAddress", "company.contactPhone",
-                "representatives.atLeastOne", "evidence.atLeastOne")));
+                "company.legalName", "company.registrationNumber", "company.operatingLicenceNumber",
+                "company.businessType", "company.district", "company.physicalAddress", "company.contactPhone",
+                "representatives.atLeastOne", "evidence.certificateOfIncorporation", "evidence.operatingLicence")));
     }
 
     @Test
     void AC_R1_CAP_03_completeDraftHasNothingMissing() {
         CompanyRegistration registration = draft(new CompanyDetails(
-                "Kafue Coaches Ltd", null, "120230045678", "Bus operator", "Lusaka", "Kafue",
+                "Kafue Coaches Ltd", null, "120230045678", "RSL-2026-0042", "Bus operator", "Lusaka", "Kafue",
                 "Plot 12, Kafue Road", null, null, "+260971000001"));
         Representative banda = registration.addRepresentative(UuidV7.generate(), new RepresentativeDetails(
                 "Mr Banda", RepresentativeDetails.IdDocumentType.NRC, "123456/10/1", "Director",
                 "+260971000002", null, true, true), JOSEPH, NOW);
         registration.attachEvidence(UuidV7.generate(), EvidenceType.CERTIFICATE_OF_INCORPORATION, file(), JOSEPH, NOW);
+        registration.attachEvidence(UuidV7.generate(), EvidenceType.OPERATING_LICENCE, file(), JOSEPH, NOW);
         registration.acknowledge(UuidV7.generate(), banda.getId(), UuidV7.generate().toString(), "sha",
                 Declaration.CURRENT.version(), JOSEPH, NOW);
 
@@ -190,7 +191,7 @@ class CompanyRegistrationTest {
     }
 
     private static CompanyDetails details(String legalName, String phone) {
-        return new CompanyDetails(legalName, null, null, null, null, null, null, null, null, phone);
+        return new CompanyDetails(legalName, null, null, null, null, null, null, null, null, null, phone);
     }
 
     private static RepresentativeDetails representative(String name, boolean primary) {

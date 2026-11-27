@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -39,6 +40,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @EnableConfigurationProperties(IdentityProviderProperties.class)
 class SecurityConfiguration {
 
+    static final String PUBLIC_ENQUIRIES = "/api/v1/public/enquiries";
+
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http, ProblemResponseWriter problems) throws Exception {
         http
@@ -47,6 +50,8 @@ class SecurityConfiguration {
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/v3/api-docs/**",
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // The website's Contact form: the only write open to visitors who are not signed in.
+                        .requestMatchers(HttpMethod.POST, PUBLIC_ENQUIRIES).permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults())
@@ -68,6 +73,10 @@ class SecurityConfiguration {
      * cannot be such a forgery.
      */
     static boolean cannotBeForged(HttpServletRequest request) {
+        // The public Contact form acts for nobody, so a forged submission gains nothing.
+        if (HttpMethod.POST.matches(request.getMethod()) && PUBLIC_ENQUIRIES.equals(request.getRequestURI())) {
+            return true;
+        }
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
         boolean bearerToken = authorization != null
                 && authorization.regionMatches(true, 0, "Bearer ", 0, 7);

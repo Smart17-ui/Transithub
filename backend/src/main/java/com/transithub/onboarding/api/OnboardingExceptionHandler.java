@@ -7,7 +7,6 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.transithub.onboarding.domain.exception.RecommendationNotEndorsedException;
 import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
@@ -33,7 +32,6 @@ import static com.transithub.shared.web.ProblemCodes.problem;
 class OnboardingExceptionHandler {
 
     static final String REGISTRATION_ALREADY_EXISTS = "registration-already-exists";
-    static final String RECOMMENDATION_NOT_ENDORSED = "recommendation-not-endorsed";
     static final String INVITATION_INVALID = "invitation-invalid";
     static final String INVITATION_EXPIRED = "invitation-expired";
 
@@ -108,12 +106,6 @@ class OnboardingExceptionHandler {
     ProblemDetail declarationOutdated(DeclarationOutdatedException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Declaration outdated", exception.getMessage(),
                 DECLARATION_OUTDATED);
-    }
-
-    @ExceptionHandler(RecommendationNotEndorsedException.class)
-    ProblemDetail notEndorsed(RecommendationNotEndorsedException exception) {
-        return problem(HttpStatus.CONFLICT, "Recommendation not endorsed", exception.getMessage(),
-                RECOMMENDATION_NOT_ENDORSED);
     }
 
     @ExceptionHandler(RegistrationNotFoundException.class)

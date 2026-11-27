@@ -32,6 +32,11 @@ public class VerificationRepository {
                                      @Nullable String respondedBy, @Nullable Instant respondedAt) {
     }
 
+    /** One check of a company's number against an official register (PACRA, RTSA, ZRA). */
+    public record RegistryCheck(UUID id, String source, String reference, String result, @Nullable String note,
+                                String checkedBy, Instant checkedAt) {
+    }
+
     public record Recommendation(UUID id, String recommendation, String reasons, String recommendedBy,
                                  Instant recommendedAt, @Nullable Instant supersededAt) {
     }
@@ -186,22 +191,39 @@ public class VerificationRepository {
                 .list();
     }
 
-    public void recommend(UUID registrationId, String recommendation, String reasons, String recommendedBy,
-                          Instant now) {
+    /** Insert-only: a newer check of the same register supersedes older ones by time. */
+    public void recordRegistryCheck(UUID registrationId, String source, String reference, String result,
+                                    @Nullable String note, String checkedBy, Instant now) {
         jdbc.sql("""
-                INSERT INTO verification_recommendation
-                    (id, registration_id, recommendation, reasons, recommended_by, recommended_at)
-                VALUES (:id, :registrationId, :recommendation, :reasons, :recommendedBy, :now)
+                INSERT INTO registry_check
+                    (id, registration_id, source, reference, result, note, checked_by, checked_at)
+                VALUES (:id, :registrationId, :source, :reference, :result, :note, :checkedBy, :now)
                 """)
                 .param("id", UuidV7.generate())
                 .param("registrationId", registrationId)
-                .param("recommendation", recommendation)
-                .param("reasons", reasons)
-                .param("recommendedBy", recommendedBy)
+                .param("source", source)
+                .param("reference", reference)
+                .param("result", result)
+                .param("note", note)
+                .param("checkedBy", checkedBy)
                 .param("now", Timestamp.from(now))
                 .update();
     }
 
+    /** Every check, oldest first; the last one per register is the current result. */
+    public List<RegistryCheck> registryChecks(UUID registrationId) {
+        return jdbc.sql("""
+                SELECT id, source, reference, result, note, checked_by, checked_at
+                  FROM registry_check WHERE registration_id = :id ORDER BY checked_at, id
+                """)
+                .param("id", registrationId)
+                .query((rs, n) -> new RegistryCheck(rs.getObject("id", UUID.class), rs.getString("source"),
+                        rs.getString("reference"), rs.getString("result"), rs.getString("note"),
+                        rs.getString("checked_by"), instant(rs.getTimestamp("checked_at"))))
+                .list();
+    }
+
+    /** Recommendations from before the one-person decision (27 Nov 2026), kept as history. */
     public List<Recommendation> recommendations(UUID registrationId) {
         return jdbc.sql("""
                 SELECT id, recommendation, reasons, recommended_by, recommended_at, superseded_at

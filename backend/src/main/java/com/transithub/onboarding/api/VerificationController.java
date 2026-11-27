@@ -2,6 +2,7 @@ package com.transithub.onboarding.api;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.transithub.identity.StaffMember;
 import com.transithub.onboarding.domain.EvidenceType;
 import com.transithub.onboarding.service.VerificationService;
 
@@ -26,7 +28,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * Verification of submitted registrations (UC-01.01-08…10; AC-R1-VER-01…07).
+ * Checking submitted registrations (UC-01.01-08…10; AC-R1-VER-01…06): taking
+ * one from the queue, document assessments, register checks, information requests.
  * Every command carries the registration {@code version} the client last saw.
  */
 @RestController
@@ -60,13 +63,27 @@ class VerificationController {
     record InformationResponseRequest(@NotNull Long version, @NotBlank @Size(max = 4000) String response) {
     }
 
-    record RecommendationRequest(@NotNull Long version, @NotNull VerificationService.RecommendationType recommendation,
-                                 @NotBlank @Size(max = 4000) String reasons) {
+    record TakeRequest(@NotNull Long version) {
+    }
+
+    record RegistryCheckRequest(@NotNull Long version, @NotNull VerificationService.RegistrySource source,
+                                @NotBlank @Size(max = 100) String reference,
+                                @NotNull VerificationService.RegistryResult result,
+                                @Size(max = 2000) @Nullable String note) {
     }
 
     @GetMapping("/verification")
     VerificationService.Summary summary(@PathVariable UUID id) {
         return verification.summary(id);
+    }
+
+    /**
+     * The Verification Officers this registration may be assigned to: active,
+     * and not involved in capturing it (AC-R1-VER-02).
+     */
+    @GetMapping("/verifier-candidates")
+    List<StaffMember> verifierCandidates(@PathVariable UUID id) {
+        return verification.verifierCandidates(id);
     }
 
     /** A supervisor assigns or reassigns the Verification Officer (AC-R1-VER-01, -02, -06). */
@@ -116,10 +133,17 @@ class VerificationController {
                 id, request.version(), requestId, request.response()));
     }
 
-    /** AC-R1-VER-07 */
-    @PostMapping("/verification/recommendation")
-    RegistrationResponse recommend(@PathVariable UUID id, @Valid @RequestBody RecommendationRequest request) {
-        return responses.from(verification.recommend(
-                id, request.version(), request.recommendation(), request.reasons()));
+    /** A checker takes a submitted registration from the queue. */
+    @PostMapping("/verification/take")
+    RegistrationResponse take(@PathVariable UUID id, @Valid @RequestBody TakeRequest request) {
+        return responses.from(verification.take(id, request.version()));
+    }
+
+    /** The checker records what PACRA, RTSA or ZRA showed for one of the company's numbers. */
+    @PostMapping("/verification/registry-checks")
+    ResponseEntity<RegistrationResponse> registryCheck(@PathVariable UUID id,
+                                                       @Valid @RequestBody RegistryCheckRequest request) {
+        return ResponseEntity.status(201).body(responses.from(verification.recordRegistryCheck(
+                id, request.version(), request.source(), request.reference(), request.result(), request.note())));
     }
 }

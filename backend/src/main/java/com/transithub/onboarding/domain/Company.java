@@ -50,6 +50,10 @@ public class Company implements Persistable<UUID> {
     @Column(name = "registration_number", length = 100)
     private String registrationNumber;
 
+    /** RTSA Road Service Licence number, as verified at approval; keeps the company traceable. */
+    @Column(name = "operating_licence_number", length = 100)
+    private String operatingLicenceNumber;
+
     @Email
     @Size(max = 254)
     @Column(name = "contact_email", length = 254)
@@ -99,6 +103,7 @@ public class Company implements Persistable<UUID> {
         Company company = new Company(companyCode, details.legalName(), details.tradingName(),
                 details.registrationNumber(), details.contactEmail(), details.contactPhone());
         company.registrationId = registration.getId();
+        company.operatingLicenceNumber = details.operatingLicenceNumber();
         company.operationalStatus = CompanyOperationalStatus.PENDING_ACTIVATION;
         return company;
     }
@@ -167,6 +172,10 @@ public class Company implements Persistable<UUID> {
 
     public String getRegistrationNumber() {
         return registrationNumber;
+    }
+
+    public String getOperatingLicenceNumber() {
+        return operatingLicenceNumber;
     }
 
     public String getContactEmail() {

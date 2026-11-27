@@ -119,7 +119,7 @@ class ReviewFindingsRegressionTest {
 
         mockMvc.perform(get("/api/v1/registrations/" + id).with(joseph.token()))
                 .andExpect(jsonPath("$.representatives", hasSize(2)))
-                .andExpect(jsonPath("$.evidence", hasSize(2)));
+                .andExpect(jsonPath("$.evidence", hasSize(3)));   // certificate + licence from the fixture, plus one
     }
 
     /** Finding 5: retrying a sync that caused a conflict returns that conflict. */

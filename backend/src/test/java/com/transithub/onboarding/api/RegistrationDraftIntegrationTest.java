@@ -137,7 +137,9 @@ class RegistrationDraftIntegrationTest {
         mockMvc.perform(get("/api/v1/registrations/" + id).with(joseph.token()))
                 .andExpect(jsonPath("$.missingForSubmission", hasItem("company.registrationNumber")))
                 .andExpect(jsonPath("$.missingForSubmission", hasItem("representatives.atLeastOne")))
-                .andExpect(jsonPath("$.missingForSubmission", hasItem("evidence.atLeastOne")))
+                .andExpect(jsonPath("$.missingForSubmission", hasItem("company.operatingLicenceNumber")))
+                .andExpect(jsonPath("$.missingForSubmission", hasItem("evidence.certificateOfIncorporation")))
+                .andExpect(jsonPath("$.missingForSubmission", hasItem("evidence.operatingLicence")))
                 .andExpect(jsonPath("$.missingForSubmission", not(hasItem("company.legalName"))));
     }
 
@@ -245,7 +247,7 @@ class RegistrationDraftIntegrationTest {
 
     @Test
     void rolesWithoutCaptureCannotStartRegistrations() throws Exception {
-        for (Role role : new Role[] {Role.VERIFICATION_OFFICER, Role.REGISTRATION_APPROVER, Role.PLATFORM_ADMINISTRATOR}) {
+        for (Role role : new Role[] {Role.VERIFICATION_OFFICER, Role.REGISTRATION_SUPERVISOR, Role.PLATFORM_ADMINISTRATOR}) {
             mockMvc.perform(post("/api/v1/registrations").with(users.platform(role).token())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
