@@ -101,10 +101,11 @@
 - On acceptance: Keycloak user, `COMPANY_ADMINISTRATOR` assignment and company status Active. Reissue path.
 - **Acceptance criteria:** AC-R1-EST-04…06.
 
-### #12 Withdrawal and audit view
+### #12 Withdrawal and audit view — **DONE**
 **Labels:** `backend`
 - Withdrawal before a decision (AC-R1-WDR-01, -02).
 - Read-only audit trail endpoint for `audit.view` (UC-X-AUD-01).
+- **Evidence:** `POST /api/v1/registrations/{id}/withdrawal` records a required reason and instruction confirmation, transitions status and status history atomically, and `GET /api/v1/registrations/{id}/audit-events` returns a bounded read-only page for users with `audit.view`.
 
 ### #13 Notifications (email and SMS), Zambian providers
 - The invitation token is stored **sealed** (`sealedToken`, encrypted with `SecretSealer`); the sender unseals it at delivery and should purge sent rows after a retention period.
@@ -112,14 +113,16 @@
 - A notification port with email and SMS adapters, choosing providers that satisfy the data-protection answers (#3).
 - Used for invitations, information requests and decisions. Development uses a log-only adapter.
 
-### #14 OpenAPI description and `allowedActions`
+### #14 OpenAPI description and `allowedActions` — **DONE**
 **Labels:** `backend`
 - Publish the OpenAPI document; the frontend generates its client from it (R-14, R-25).
 - Every registration response includes `allowedActions` for the current user (R-26, AC-R1-DEC-06).
+- **Evidence:** Springdoc serves `/v3/api-docs` and `/v3/api-docs.yaml`; Swagger UI is at `/swagger-ui/index.html`. Registration action lists account for permissions, registration state, assignment and decision separation of duties.
 
 ### #15 Step 6: Release 1 frontend
 **Labels:** `frontend`. Depends on #8 and #14.
 - Field capture and sync screens, back-office queues and registration detail, decisions, invitation acceptance, audit view.
+- **In progress:** first online staff-workspace slice is in `frontend/`: Keycloak sign-in, registration create/reopen/edit, server-driven actions, withdrawal, and audit history. Offline capture remains gated by the #8 device trial.
 
 ### #16 Step 7: demo script on a real tablet
 **Labels:** `quality`

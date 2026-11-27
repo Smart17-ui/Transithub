@@ -1,8 +1,18 @@
-# TransitHub Backend
+# TransitHub
 
 TransitHub is a multi-company transport management platform for Zambia. Transport companies are onboarded by the platform operator and then run their operations on it: employees, routes and timetables, vehicles and maintenance, trips, ticket sales (at offices and on an online marketplace), luggage, parcels, finance, customer service and reporting. Each company's data is strictly isolated from every other company's.
 
-This repository is the **backend**: a modular monolith built with Java 25, Spring Boot 4.2 and PostgreSQL 18.
+This is a **monorepo** that holds the backend, the frontend and the shared documentation:
+
+| Folder | What | Stack |
+|---|---|---|
+| [backend/](backend/) | API and business logic: a modular monolith | Java 25, Spring Boot 4.2, PostgreSQL 18 |
+| [frontend/](frontend/) | Staff workspace, a single PWA (ADR-0009). See its [README](frontend/README.md) | React, TypeScript, Vite, Mantine |
+| [docs/](docs/) | Analysis, requirements, ADRs and engineering notes for both | Markdown |
+| [scripts/](scripts/) | One-time setup scripts (database roles and databases) | SQL |
+| [.github/](.github/) | CI per app (`backend-ci.yml`, `frontend-ci.yml`), CodeQL, Dependabot | GitHub Actions |
+
+The backend publishes its API contract as OpenAPI (`/v3/api-docs`), and the frontend generates its TypeScript types from it. Each CI workflow runs only when its own folder changes.
 
 **Current stage:** Release 1, company onboarding end to end. See the [Release 1 specification](docs/requirements/release-1-onboarding.md).
 
@@ -35,6 +45,8 @@ This repository is the **backend**: a modular monolith built with Java 25, Sprin
 ---
 
 ## Local setup (Windows)
+
+Sections 1–5 set up the **backend**. For the frontend, follow [frontend/README.md](frontend/README.md) once the backend runs.
 
 ### 1. Install
 - **JDK 25** (for example Eclipse Temurin 25).
@@ -80,7 +92,7 @@ Restart VS Code or your terminal afterwards so it sees them.
 | `TEST_DB_URL` | No | `jdbc:postgresql://localhost:5432/transithub_test` | Test database |
 | `DB_MIGRATION_USERNAME` / `DB_RUNTIME_USERNAME` | No | `transithub_app` / `transithub_runtime` | Role names |
 | `TRANSITHUB_STORAGE_KEY` | To run the app | — | Base64 AES-256 key that encrypts evidence and signatures at rest. Tests use a built-in test key |
-| `TRANSITHUB_STORAGE_ROOT` | No | `./data/files` | Folder for encrypted files (git-ignored) |
+| `TRANSITHUB_STORAGE_ROOT` | No | `./data/files` | Folder for encrypted files, relative to where the app runs (normally `backend/data/files`, git-ignored) |
 | `OIDC_ISSUER` | No | `http://localhost:8180/realms/staff` | Keycloak realm that issues tokens |
 | `OIDC_CLIENT_IDS` | No | `transithub-backoffice` | Comma-separated client ids allowed to call the API |
 | `OIDC_JWK_SET_URI` | No | `<issuer>/protocol/openid-connect/certs` | Token signing keys |
@@ -89,7 +101,10 @@ Restart VS Code or your terminal afterwards so it sees them.
 
 ### 4. Run the tests
 
+From the `backend` folder:
+
 ```powershell
+cd backend
 .\mvnw test        # unit and integration tests against transithub_test
 .\mvnw verify      # what CI runs
 ```
@@ -99,6 +114,7 @@ Flyway creates or updates the schema automatically. Test companies are never del
 ### 5. Run the application (optional)
 
 ```powershell
+cd backend
 .\mvnw spring-boot:run      # profile "dev", port 8080, database transithub_dev
 ```
 
@@ -126,7 +142,7 @@ chore(deps): bump spring-boot to 4.2.1
 
 Types: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`, `ci`. The scope is the module or area.
 
-**Before pushing:** run `.\mvnw verify`. If CI goes red, fixing it comes before any other work (ADR-0012).
+**Before pushing:** run `.\mvnw verify` in `backend/` (and `npm.cmd run build` in `frontend/` if you changed it). If CI goes red, fixing it comes before any other work (ADR-0012).
 
 **Test data is never deleted** (the application has no delete rights), so it builds up in `transithub_test` across runs. Every test must create its own **unique** data: codes, registration numbers *and names*. Otherwise duplicate detection or uniqueness rules will (correctly) react to leftovers from earlier runs.
 
@@ -134,7 +150,7 @@ Types: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`, `ci`. The scope is th
 
 **Decisions:** any significant technical decision gets a short ADR in `docs/adr/`. Accepted ADRs are never edited, only superseded by a new one.
 
-**Database changes:** only through new Flyway migrations (`src/main/resources/db/migration/V<n>__<description>.sql`). **Never edit an applied migration.** Every new tenant table needs explicit grants to `transithub_runtime`, row-level security and a policy. `TenantIsolationSchemaTest` fails the build otherwise.
+**Database changes:** only through new Flyway migrations (`backend/src/main/resources/db/migration/V<n>__<description>.sql`). **Never edit an applied migration.** Every new tenant table needs explicit grants to `transithub_runtime`, row-level security and a policy. `TenantIsolationSchemaTest` fails the build otherwise.
 
 **Secrets:** never in code, configuration files or commits; only environment variables. `.env` files are git-ignored.
 

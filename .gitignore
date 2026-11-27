@@ -1,8 +1,33 @@
-HELP.md
+### Backend build output (Maven) ###
+backend/HELP.md
 target/
-.mvn/wrapper/maven-wrapper.jar
+backend/.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+
+### Local encrypted file storage (development) ###
+/backend/data/
+
+### Frontend (details in frontend/.gitignore) ###
+node_modules/
+
+### Secrets and local settings (never commit) ###
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.jks
+
+### Local tools ###
+keycloak-*/
+
+### Logs and operating-system files ###
+*.log
+.DS_Store
+Thumbs.db
 
 ### STS ###
 .apt_generated
@@ -31,32 +56,3 @@ build/
 
 ### VS Code ###
 .vscode/
-
-### Environment variables and secrets ###
-.env
-.env.*
-!.env.example
-secrets/
-*.pem
-*.key
-
-### Logs and operating-system files ###
-*.log
-.DS_Store
-Thumbs.db
-
-### Secrets and local settings (never commit) ###
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.p12
-*.jks
-
-### Local tools ###
-keycloak-*/
-*.log
-
-### Local encrypted file storage (development) ###
-/data/

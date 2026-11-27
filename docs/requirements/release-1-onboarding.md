@@ -75,7 +75,7 @@ One person may hold several roles. The check is per registration, not per role. 
 
 `Draft → Submitted → UnderVerification ⇄ AwaitingInformation → Recommended → (review endorses) → Approved | Rejected`
 - `Recommended → UnderVerification` when the reviewer challenges the recommendation.
-- `Draft | Submitted | UnderVerification | AwaitingInformation → Withdrawn`.
+- `Draft | Submitted | UnderVerification | AwaitingInformation | Recommended → Withdrawn` (any state before a decision).
 - `Rejected` records `appealDeadline = notifiedAt + 30 days` (a platform setting). Appeal handling arrives in 1.1.
 - **Sync never changes status** (a synced draft is still a Draft).
 

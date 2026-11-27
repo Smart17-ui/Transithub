@@ -1,0 +1,73 @@
+:root {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  color: #1c2927;
+  background: #f7f8f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #1c2927;
+  --muted: #75827e;
+  --teal: #087f70;
+  --line: #e5eae5;
+  --paper: #fff;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #f7f8f5; }
+button, input, textarea { font: inherit; }
+a { text-decoration: none; }
+
+.topbar { background: rgba(255,255,255,.93); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px); }
+.topbar-inner { height: 100%; display: flex; align-items: center; justify-content: space-between; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font: 800 20px 'Segoe UI',sans-serif; letter-spacing: -.8px; }
+.brand-light { color: #82908b; font-weight: 500; }
+.brand-mark { width: 31px; height: 31px; border-radius: 10px; display: grid; place-items: center; background: #0a806f; color: white; font: 800 17px 'Segoe UI',sans-serif; letter-spacing: -1px; box-shadow: 0 5px 12px #087f7033; }
+.page-shell { padding-top: 46px; padding-bottom: 72px; }
+.welcome-layout { min-height: min(680px, calc(100vh - 180px)); display: grid; grid-template-columns: 1.1fr .9fr; align-items: center; gap: clamp(32px, 8vw, 112px); }
+.welcome-copy { padding: 28px 0 48px; }
+.hero-title,.page-title { color: var(--ink); font: 800 clamp(35px, 5vw, 56px)/1.11 'Segoe UI',Arial,sans-serif; letter-spacing: -2.4px; }
+.hero-title span { color: var(--teal); }
+.welcome-card { position: relative; min-height: 390px; overflow: hidden; border: 1px solid #e4eae5; background: linear-gradient(145deg,#fff 10%,#f0f7f3 100%); }
+.welcome-card-content { position: relative; z-index: 1; padding: 15px 20px; }
+.card-orbit { position: absolute; border: 1px solid #c9ddd4; border-radius: 50%; }
+.orbit-one { width: 330px; height: 330px; right: -110px; top: -145px; }
+.orbit-two { width: 430px; height: 430px; right: -155px; top: -195px; }
+.workflow-step { display: flex; align-items: center; gap: 16px; margin-top: 26px; }
+.workflow-step > span { display: grid; place-items: center; flex: 0 0 38px; height: 38px; border-radius: 13px; color: #087f70; background: #e1f2eb; font: 700 12px 'Segoe UI',sans-serif; }
+.workflow-line { width: 1px; height: 20px; margin: 5px 0 0 19px; background: #d6e5dd; }
+.content-grid { display: grid; grid-template-columns: minmax(0,1fr) 300px; align-items: start; gap: 24px; }
+.eyebrow { margin-bottom: 12px; color: #87938e; font-size: 12px; font-weight: 600; letter-spacing: .55px; }
+.eyebrow a { color: var(--teal); }
+.page-title { font-size: clamp(31px,4vw,43px); letter-spacing: -1.7px; }
+.panel { border: 1px solid var(--line); background: var(--paper); box-shadow: 0 7px 28px #263a3010; }
+.soft-panel { background: #fff; }
+.side-column { display: grid; gap: 16px; padding-top: 63px; }
+.tip-card { color: #fff; background: #117a6e; background-image: radial-gradient(circle at 100% 0%,#ffffff24,transparent 42%),linear-gradient(145deg,#158578,#0f685f); }
+.tip-copy { color: #d0e8e1; line-height: 1.65; }
+.detail-grid { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(270px,.7fr); gap: 18px; align-items: start; }
+.registration-heading .page-title { font-size: clamp(28px,3vw,38px); }
+.metric-card { border: 1px solid var(--line); background: #fff; }
+.action-line { display: flex; align-items: center; gap: 10px; }
+.action-check { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #e3f4ed; color: var(--teal); font-size: 12px; font-weight: 700; }
+.uuid { overflow-wrap: anywhere; color: #677770; }
+.dot-separator { padding: 0 5px; color: #a8b2ad; }
+.center-message { max-width: 620px; margin: 70px auto; text-align: center; }
+.button-arrow { padding-left: 8px; }
+.user-name { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .welcome-layout { grid-template-columns: 1fr; gap: 10px; padding-top: 30px; }
+  .welcome-copy { padding: 16px 0 10px; }
+  .welcome-card { min-height: 340px; }
+  .content-grid { grid-template-columns: 1fr; }
+  .side-column { padding-top: 0; grid-template-columns: 1fr 1fr; }
+  .detail-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .page-shell { padding-top: 26px; }
+  .topbar-inner { padding-inline: 16px; }
+  .user-name { display: none; }
+  .side-column { grid-template-columns: 1fr; }
+  .registration-heading { flex-direction: column; }
+  .registration-heading > .mantine-Group-root { width: 100%; flex-wrap: wrap; }
+}

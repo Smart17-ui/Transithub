@@ -21,3 +21,4 @@ Accepted decisions, in order. Each ADR is short: context, decision, consequences
 | [0015](0015-marketplace-public-read-model.md) | Marketplace search from a public, platform-level read model | R-40 |
 | [0016](0016-identity-provider-aws-cognito.md) | ~~AWS Cognito (Cape Town); AWS as the cloud~~ (superseded by 0017) | ADR-0004, ADR-0013 |
 | [0017](0017-hosting-in-zambia-infratel-keycloak.md) | Host in Zambia at Infratel; self-hosted Keycloak for sign-in | Data Protection Act 2021 |
+| [0018](0018-monorepo-backend-frontend.md) | One repository with `backend/` and `frontend/` folders | ADR-0009, ADR-0012 |
