@@ -97,7 +97,7 @@ public class RegistrationService {
         }
 
         Instant now = clock.instant();
-        String reference = "REG-%d-%06d".formatted(now.atZone(ZAMBIA).getYear(), registrations.nextReferenceNumber());
+        String reference = reference(now, registrations.nextReferenceNumber());
         CompanyRegistration registration = CompanyRegistration.startDraft(
                 id, reference, channel, details, currentActor.id(), now);
 
@@ -107,6 +107,11 @@ public class RegistrationService {
         audit.record("registration.started", "CompanyRegistration", id, null, null,
                 Map.of("reference", reference, "channel", channel.name()));
         return saved;
+    }
+
+    /** {@code REG-<local year>-<6 digits>}, e.g. REG-2026-000145 (AC-R1-SYN-03). */
+    static String reference(Instant now, long number) {
+        return "REG-%d-%06d".formatted(now.atZone(ZAMBIA).getYear(), number);
     }
 
     @Transactional(readOnly = true)

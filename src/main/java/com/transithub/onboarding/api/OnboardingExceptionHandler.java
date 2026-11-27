@@ -10,9 +10,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.transithub.onboarding.domain.exception.CompanyAlreadyExistsException;
 import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.UploadRejectedException;
+import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
 import com.transithub.onboarding.domain.exception.RegistrationAlreadyExistsException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
+import com.transithub.onboarding.domain.exception.SyncConflictOpenException;
 import com.transithub.shared.web.ProblemCodes;
 
 import static com.transithub.shared.web.ProblemCodes.problem;
@@ -28,6 +30,7 @@ class OnboardingExceptionHandler {
     static final String REGISTRATION_ALREADY_EXISTS = "registration-already-exists";
     static final String INVALID_REGISTRATION_STATE = "invalid-registration-state";
     static final String DECLARATION_OUTDATED = "declaration-outdated";
+    static final String SYNC_CONFLICT_OPEN = "sync-conflict-open";
 
     @ExceptionHandler(UploadRejectedException.class)
     ProblemDetail uploadRejected(UploadRejectedException exception) {
@@ -39,6 +42,21 @@ class OnboardingExceptionHandler {
             case UNSUPPORTED_TYPE -> problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported file type",
                     exception.getMessage(), ProblemCodes.UNSUPPORTED_FILE_TYPE);
         };
+    }
+
+    @ExceptionHandler(SyncConflictOpenException.class)
+    ProblemDetail syncConflictOpen(SyncConflictOpenException exception) {
+        ProblemDetail body = problem(HttpStatus.CONFLICT, "Unresolved sync conflict", exception.getMessage(),
+                SYNC_CONFLICT_OPEN);
+        body.setProperty("conflictId", exception.conflictId());
+        return body;
+    }
+
+    /** A domain rule rejected the input (e.g. a merge without the merged version). */
+    @ExceptionHandler(InvalidRegistrationInputException.class)
+    ProblemDetail invalidInput(InvalidRegistrationInputException exception) {
+        return problem(HttpStatus.BAD_REQUEST, "Invalid request", exception.getMessage(),
+                ProblemCodes.VALIDATION_FAILED);
     }
 
     @ExceptionHandler(DeclarationOutdatedException.class)

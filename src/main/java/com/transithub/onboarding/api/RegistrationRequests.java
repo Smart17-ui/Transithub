@@ -1,16 +1,20 @@
 package com.transithub.onboarding.api;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
 
 import com.transithub.onboarding.domain.CompanyDetails;
+import com.transithub.onboarding.domain.DraftSnapshot;
 import com.transithub.onboarding.domain.RegistrationChannel;
 import com.transithub.onboarding.domain.RepresentativeDetails;
+import com.transithub.onboarding.service.SyncConflictService;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -64,6 +68,62 @@ final class RegistrationRequests {
     record UpdateDetailsRequest(
             @NotNull Long version,
             @NotNull @Valid CompanyDetailsRequest details) {
+    }
+
+    // --- offline sync (AC-R1-SYN-01..08) ---------------------------------------
+
+    /** A representative as captured on the device, with the id the device gave them. */
+    record SyncRepresentativeRequest(
+            @NotNull UUID id,
+            @NotBlank @Size(max = 200) String fullName,
+            RepresentativeDetails.@Nullable IdDocumentType idDocumentType,
+            @Size(max = 50) @Nullable String idDocumentNumber,
+            @Size(max = 100) @Nullable String capacity,
+            @Pattern(regexp = PHONE) @Nullable String phone,
+            @Email @Size(max = 254) @Nullable String email,
+            @Nullable Boolean acknowledgementRequired,
+            @Nullable Boolean primaryContact) {
+
+        DraftSnapshot.RepresentativeSnapshot toDomain() {
+            return new DraftSnapshot.RepresentativeSnapshot(id, new RepresentativeDetails(
+                    fullName, idDocumentType, idDocumentNumber, capacity, phone, email,
+                    acknowledgementRequired == null || acknowledgementRequired,
+                    primaryContact != null && primaryContact));
+        }
+    }
+
+    /** The draft's full content on the device. */
+    record SnapshotRequest(
+            @Valid @Nullable CompanyDetailsRequest details,
+            @Valid @Size(max = 20) @Nullable List<SyncRepresentativeRequest> representatives) {
+
+        DraftSnapshot toDomain() {
+            return new DraftSnapshot(
+                    details == null ? CompanyDetails.empty() : details.toDomain(),
+                    representatives == null ? List.of()
+                            : representatives.stream().map(SyncRepresentativeRequest::toDomain).toList());
+        }
+    }
+
+    /**
+     * @param baseVersion the server version this device last received for the
+     *                    draft; omit if it has never been synced
+     */
+    record SyncItemRequest(
+            @NotNull UUID id,
+            @Nullable Long baseVersion,
+            @NotNull @Valid SnapshotRequest snapshot) {
+    }
+
+    record SyncBatchRequest(
+            @NotBlank @Size(max = 100) @Pattern(regexp = "^[A-Za-z0-9._-]+$") String deviceId,
+            @NotEmpty @Size(max = 50) @Valid List<SyncItemRequest> items) {
+    }
+
+    record ConflictResolutionRequest(
+            @NotNull SyncConflictService.Resolution resolution,
+            @Valid @Nullable SnapshotRequest merged,
+            @NotBlank @Size(max = 2000) String reason) {
     }
 
     record RefusalRequest(

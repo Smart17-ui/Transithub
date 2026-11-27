@@ -162,6 +162,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 ProblemCodes.ACCESS_DENIED));
     }
 
+    /** Permitted in general, but not on this record because of an earlier role in it (ADR-0004). */
+    @ExceptionHandler(com.transithub.shared.security.SeparationOfDutiesException.class)
+    public ResponseEntity<ProblemDetail> handleSeparationOfDuties(
+            com.transithub.shared.security.SeparationOfDutiesException exception) {
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem(
+                HttpStatus.FORBIDDEN,
+                "Separation of duties",
+                exception.getMessage(),
+                ProblemCodes.SEPARATION_OF_DUTIES));
+    }
+
     /** Two users changed the same record; the second write is refused (ADR-0007). */
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ProblemDetail> handleConcurrentModification(

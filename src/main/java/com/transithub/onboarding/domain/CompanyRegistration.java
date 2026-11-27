@@ -14,7 +14,9 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Persistable;
 
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
+import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
+import com.transithub.onboarding.domain.exception.SyncConflictOpenException;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -65,6 +67,14 @@ public class CompanyRegistration implements Persistable<UUID> {
     @Column(name = "content_revision", nullable = false)
     private int contentRevision;
 
+    /** Who changed the server copy last (separation of duties on conflicts, AC-R1-SYN-06). */
+    @Column(name = "last_changed_by", nullable = false)
+    private String lastChangedBy;
+
+    /** An unresolved sync conflict blocks every change and submission (AC-R1-SYN-05). */
+    @Column(name = "open_conflict_id")
+    private @Nullable UUID openConflictId;
+
     @Embedded
     private CompanyDetails details;
 
@@ -113,6 +123,7 @@ public class CompanyRegistration implements Persistable<UUID> {
         registration.reference = Objects.requireNonNull(reference, "reference");
         registration.channel = Objects.requireNonNull(channel, "channel");
         registration.capturedBy = Objects.requireNonNull(actor, "actor");
+        registration.lastChangedBy = actor;
         registration.details = (details == null ? CompanyDetails.empty() : details).normalised();
         registration.contentRevision = 1;
         registration.createdAt = now;
@@ -125,7 +136,7 @@ public class CompanyRegistration implements Persistable<UUID> {
 
     /** Correct or complete the company details of a draft (AC-R1-CAP-05). */
     public void updateDetails(CompanyDetails newDetails, String actor, Instant now) {
-        requireDraft("change the details of");
+        requireEditable("change the details of");
         CompanyDetails normalised = newDetails.normalised();
 
         Map<String, @Nullable String> before = details.asMap();
@@ -141,13 +152,13 @@ public class CompanyRegistration implements Persistable<UUID> {
         }
 
         details = normalised;
-        touch(material, now);
+        touch(material, actor, now);
     }
 
     /** Add a representative; a registration may have several (BR-ONB-012–020). */
     public Representative addRepresentative(UUID representativeId, RepresentativeDetails input,
                                             String actor, Instant now) {
-        requireDraft("add a representative to");
+        requireEditable("add a representative to");
         RepresentativeDetails cleaned = requireName(input.normalised());
 
         if (cleaned.primaryContact()) {
@@ -158,13 +169,13 @@ public class CompanyRegistration implements Persistable<UUID> {
         representatives.add(representative);
 
         recordChange("representative[" + representativeId + "]", null, cleaned.fullName(), true, actor, now);
-        touch(true, now);
+        touch(true, actor, now);
         return representative;
     }
 
     public void updateRepresentative(UUID representativeId, RepresentativeDetails input,
                                      String actor, Instant now) {
-        requireDraft("change a representative of");
+        requireEditable("change a representative of");
         Representative representative = activeRepresentative(representativeId);
         RepresentativeDetails cleaned = requireName(input.normalised());
 
@@ -186,37 +197,37 @@ public class CompanyRegistration implements Persistable<UUID> {
                     .forEach(Representative::clearPrimaryContact);
         }
         representative.apply(cleaned);
-        touch(changed, now);
+        touch(changed, actor, now);
     }
 
     /** Remove a representative from a draft. The row is kept, marked removed. */
     public void removeRepresentative(UUID representativeId, String actor, Instant now) {
-        requireDraft("remove a representative from");
+        requireEditable("remove a representative from");
         Representative representative = activeRepresentative(representativeId);
         representative.markRemoved(now);
         recordChange("representative[" + representativeId + "]", representative.getFullName(), null,
                 true, actor, now);
-        touch(true, now);
+        touch(true, actor, now);
     }
 
     /** Attach a document (UC-01.01-03). A material change: signatures must be given again. */
     public Evidence attachEvidence(UUID evidenceId, EvidenceType type, Evidence.StoredFile file,
                                    String actor, Instant now) {
-        requireDraft("attach evidence to");
+        requireEditable("attach evidence to");
         Evidence item = new Evidence(evidenceId, this, type, file, actor, now);
         evidence.add(item);
         recordChange("evidence[" + evidenceId + "]", null, type + ": " + file.fileName(), true, actor, now);
-        touch(true, now);
+        touch(true, actor, now);
         return item;
     }
 
     public void removeEvidence(UUID evidenceId, String actor, Instant now) {
-        requireDraft("remove evidence from");
+        requireEditable("remove evidence from");
         Evidence item = activeEvidenceItem(evidenceId);
         item.markRemoved(actor, now);
         recordChange("evidence[" + evidenceId + "]", item.getEvidenceType() + ": " + item.getFileName(), null,
                 true, actor, now);
-        touch(true, now);
+        touch(true, actor, now);
     }
 
     /**
@@ -226,7 +237,7 @@ public class CompanyRegistration implements Persistable<UUID> {
      */
     public Acknowledgement acknowledge(UUID acknowledgementId, UUID representativeId, String signatureStorageKey,
                                        String signatureSha256, String declarationVersion, String actor, Instant now) {
-        requireDraft("acknowledge");
+        requireEditable("acknowledge");
         activeRepresentative(representativeId);
         supersedeResponseOf(representativeId, now);
 
@@ -235,18 +246,18 @@ public class CompanyRegistration implements Persistable<UUID> {
         acknowledgements.add(ack);
         recordChange("acknowledgement[" + representativeId + "]", null,
                 "ACKNOWLEDGED (" + declarationVersion + ", revision " + contentRevision + ")", false, actor, now);
-        touch(false, now);
+        touch(false, actor, now);
         return ack;
     }
 
     /** A representative refuses; submission is blocked until resolved (AC-R1-ACK-02). */
     public Acknowledgement refuse(UUID acknowledgementId, UUID representativeId, String reason,
                                   String actor, Instant now) {
-        requireDraft("record a refusal on");
+        requireEditable("record a refusal on");
         activeRepresentative(representativeId);
         String cleanReason = CompanyDetails.clean(reason);
         if (cleanReason == null) {
-            throw new IllegalArgumentException("A refusal needs a reason.");
+            throw new InvalidRegistrationInputException("A refusal needs a reason.");
         }
         supersedeResponseOf(representativeId, now);
 
@@ -254,7 +265,7 @@ public class CompanyRegistration implements Persistable<UUID> {
                 contentRevision, actor, now);
         acknowledgements.add(ack);
         recordChange("acknowledgement[" + representativeId + "]", null, "REFUSED: " + cleanReason, false, actor, now);
-        touch(false, now);
+        touch(false, actor, now);
         return ack;
     }
 
@@ -273,6 +284,66 @@ public class CompanyRegistration implements Persistable<UUID> {
     /** Any evidence item, including removed ones (their history stays viewable). */
     public Optional<Evidence> evidenceItem(UUID evidenceId) {
         return evidence.stream().filter(item -> item.getId().equals(evidenceId)).findFirst();
+    }
+
+    /** The current details and active representatives, for sync and conflicts. */
+    public DraftSnapshot snapshot() {
+        return new DraftSnapshot(details, activeRepresentatives().stream()
+                .map(representative -> new DraftSnapshot.RepresentativeSnapshot(representative.getId(),
+                        representative.details()))
+                .toList());
+    }
+
+    /**
+     * Makes the draft match a snapshot from a device (AC-R1-SYN-01): details
+     * are replaced; representatives are added, changed or removed by id.
+     * Every difference is recorded in the change history like a manual edit.
+     */
+    public void applySnapshot(DraftSnapshot snapshot, String actor, Instant now) {
+        requireEditable("synchronise");
+
+        updateDetails(snapshot.details(), actor, now);
+
+        java.util.Set<UUID> sent = new java.util.HashSet<>();
+        for (DraftSnapshot.RepresentativeSnapshot incoming : snapshot.representatives()) {
+            sent.add(incoming.id());
+            boolean active = activeRepresentatives().stream().anyMatch(r -> r.getId().equals(incoming.id()));
+            boolean everExisted = representatives.stream().anyMatch(r -> r.getId().equals(incoming.id()));
+            if (active) {
+                updateRepresentative(incoming.id(), incoming.details(), actor, now);
+            } else if (!everExisted) {
+                addRepresentative(incoming.id(), incoming.details(), actor, now);
+            }
+            // A representative removed on the server is not revived by a device that still lists it.
+        }
+        for (Representative existing : activeRepresentatives()) {
+            if (!sent.contains(existing.getId())) {
+                removeRepresentative(existing.getId(), actor, now);
+            }
+        }
+    }
+
+    /** A device's edit clashed with a server change; both are kept elsewhere (AC-R1-SYN-05). */
+    public void raiseSyncConflict(UUID conflictId) {
+        requireEditable("raise a sync conflict on");
+        this.openConflictId = Objects.requireNonNull(conflictId);
+    }
+
+    /**
+     * Resolves the open conflict (AC-R1-SYN-06). {@code chosen} is the
+     * version to apply, or {@code null} to keep the server copy as it is.
+     */
+    public void resolveSyncConflict(UUID conflictId, @Nullable DraftSnapshot chosen, String actor, Instant now) {
+        requireDraft("resolve a sync conflict on");
+        if (!conflictId.equals(openConflictId)) {
+            throw new RegistrationNotFoundException("Open sync conflict", conflictId);
+        }
+        openConflictId = null;
+        if (chosen != null) {
+            applySnapshot(chosen, actor, now);
+        } else {
+            updatedAt = now;
+        }
     }
 
     /**
@@ -311,6 +382,9 @@ public class CompanyRegistration implements Persistable<UUID> {
         }
         if (active.stream().noneMatch(Representative::isPrimaryContact) && !active.isEmpty()) {
             missing.add("representatives.primaryContact");
+        }
+        if (openConflictId != null) {
+            missing.add("sync.openConflict");
         }
         if (activeEvidence().isEmpty()) {
             missing.add("evidence.atLeastOne");
@@ -360,9 +434,16 @@ public class CompanyRegistration implements Persistable<UUID> {
         }
     }
 
+    private void requireEditable(String action) {
+        requireDraft(action);
+        if (openConflictId != null) {
+            throw new SyncConflictOpenException(openConflictId);
+        }
+    }
+
     private static RepresentativeDetails requireName(RepresentativeDetails details) {
         if (details.fullName() == null) {
-            throw new IllegalArgumentException("A representative needs a full name.");
+            throw new InvalidRegistrationInputException("A representative needs a full name.");
         }
         return details;
     }
@@ -377,12 +458,13 @@ public class CompanyRegistration implements Persistable<UUID> {
      * A material change creates a new content revision, which no one has
      * acknowledged yet: every current response is invalidated (AC-R1-ACK-03).
      */
-    private void touch(boolean material, Instant now) {
+    private void touch(boolean material, String actor, Instant now) {
         if (material) {
             contentRevision++;
             String reason = "Material change: content revision " + contentRevision;
             acknowledgements.stream().filter(Acknowledgement::isValid).forEach(ack -> ack.invalidate(reason, now));
         }
+        lastChangedBy = actor;
         updatedAt = now;
     }
 
@@ -424,6 +506,14 @@ public class CompanyRegistration implements Persistable<UUID> {
 
     public int getContentRevision() {
         return contentRevision;
+    }
+
+    public String getLastChangedBy() {
+        return lastChangedBy;
+    }
+
+    public @Nullable UUID getOpenConflictId() {
+        return openConflictId;
     }
 
     public CompanyDetails getDetails() {
