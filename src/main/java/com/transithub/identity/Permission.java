@@ -28,6 +28,8 @@ public enum Permission {
 
     // Companies
     COMPANY_VIEW("company.view"),
+    /** Issue or reissue the first Company Administrator invitation (AC-R1-EST-06). */
+    COMPANY_INVITE_ADMINISTRATOR("company.invite-administrator"),
 
     // Platform administration
     PLATFORM_USER_MANAGE("platform-user.manage"),

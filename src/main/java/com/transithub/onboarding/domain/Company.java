@@ -189,6 +189,14 @@ public class Company implements Persistable<UUID> {
         return version;
     }
 
+    /** AC-R1-EST-05: the first Company Administrator has accepted; the company may operate. */
+    public void activate() {
+        if (operationalStatus != CompanyOperationalStatus.PENDING_ACTIVATION) {
+            throw new IllegalStateException("Only a company pending activation can be activated");
+        }
+        operationalStatus = CompanyOperationalStatus.ACTIVE;
+    }
+
     public UUID getRegistrationId() {
         return registrationId;
     }

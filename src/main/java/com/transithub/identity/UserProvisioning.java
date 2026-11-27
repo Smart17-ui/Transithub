@@ -1,0 +1,94 @@
+package com.transithub.identity;
+
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.jspecify.annotations.Nullable;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.transithub.shared.id.UuidV7;
+
+/**
+ * Creating TransitHub users and granting them roles, for other modules
+ * (e.g. accepting a Company Administrator invitation). Runs inside the
+ * caller's transaction, in platform scope.
+ */
+@Component
+public class UserProvisioning {
+
+    /** The account exists but is disabled; it may not be given new roles. */
+    public static class AccountDisabledException extends RuntimeException {
+        public AccountDisabledException() {
+            super("This account is disabled.");
+        }
+    }
+
+    private final JdbcClient jdbc;
+    private final Clock clock;
+
+    UserProvisioning(JdbcClient jdbc, Clock clock) {
+        this.jdbc = jdbc;
+        this.clock = clock;
+    }
+
+    /**
+     * The TransitHub user for an identity-provider subject, created if it
+     * does not exist yet.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID ensureUser(String subject, String displayName, @Nullable String email) {
+        Optional<UserRow> existing = jdbc.sql("SELECT id, status FROM user_account WHERE identity_subject = :subject")
+                .param("subject", subject)
+                .query((rs, n) -> new UserRow(rs.getObject("id", UUID.class), rs.getString("status")))
+                .optional();
+        if (existing.isPresent()) {
+            if (!"ACTIVE".equals(existing.get().status())) {
+                throw new AccountDisabledException();
+            }
+            return existing.get().id();
+        }
+
+        UUID id = UuidV7.generate();
+        Timestamp now = Timestamp.from(clock.instant());
+        jdbc.sql("""
+                INSERT INTO user_account (id, identity_subject, email, display_name, status, created_at, updated_at)
+                VALUES (:id, :subject, :email, :name, 'ACTIVE', :now, :now)
+                """)
+                .param("id", id)
+                .param("subject", subject)
+                .param("email", email)
+                .param("name", displayName)
+                .param("now", now)
+                .update();
+        return id;
+    }
+
+    /** Grants a company-scoped role, unless the user already holds it there. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void grantCompanyRole(UUID userId, Role role, UUID companyId, String grantedBy) {
+        if (role.scopeType() != Role.ScopeType.COMPANY) {
+            throw new IllegalArgumentException(role + " is not a company role");
+        }
+        // valid_from uses the database clock, which also decides validity
+        // (app_principal_lookup), so the role works from the very next request.
+        jdbc.sql("""
+                INSERT INTO role_assignment (id, user_id, role_code, company_id, valid_from, granted_by, granted_at)
+                VALUES (:id, :userId, :role, :companyId, now(), :grantedBy, now())
+                ON CONFLICT DO NOTHING
+                """)
+                .param("id", UuidV7.generate())
+                .param("userId", userId)
+                .param("role", role.name())
+                .param("companyId", companyId)
+                .param("grantedBy", grantedBy)
+                .update();
+    }
+
+    private record UserRow(UUID id, String status) {
+    }
+}

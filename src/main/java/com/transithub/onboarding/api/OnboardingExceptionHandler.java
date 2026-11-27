@@ -12,6 +12,8 @@ import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
+import com.transithub.onboarding.domain.exception.InvitationRejectedException;
+import com.transithub.identity.UserProvisioning;
 import com.transithub.onboarding.domain.exception.NotAssignedVerifierException;
 import com.transithub.onboarding.domain.exception.VerificationIncompleteException;
 import com.transithub.onboarding.domain.exception.RegistrationAlreadyExistsException;
@@ -32,6 +34,20 @@ class OnboardingExceptionHandler {
 
     static final String REGISTRATION_ALREADY_EXISTS = "registration-already-exists";
     static final String RECOMMENDATION_NOT_ENDORSED = "recommendation-not-endorsed";
+    static final String INVITATION_INVALID = "invitation-invalid";
+    static final String INVITATION_EXPIRED = "invitation-expired";
+
+    @ExceptionHandler(InvitationRejectedException.class)
+    ProblemDetail invitationRejected(InvitationRejectedException exception) {
+        return exception.reason() == InvitationRejectedException.Reason.EXPIRED
+                ? problem(HttpStatus.GONE, "Invitation expired", exception.getMessage(), INVITATION_EXPIRED)
+                : problem(HttpStatus.NOT_FOUND, "Invitation not valid", exception.getMessage(), INVITATION_INVALID);
+    }
+
+    @ExceptionHandler(UserProvisioning.AccountDisabledException.class)
+    ProblemDetail accountDisabled(UserProvisioning.AccountDisabledException exception) {
+        return problem(HttpStatus.FORBIDDEN, "Account disabled", exception.getMessage(), ProblemCodes.ACCESS_DENIED);
+    }
     static final String INVALID_REGISTRATION_STATE = "invalid-registration-state";
     static final String DECLARATION_OUTDATED = "declaration-outdated";
     static final String SYNC_CONFLICT_OPEN = "sync-conflict-open";

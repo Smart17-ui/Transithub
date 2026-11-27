@@ -50,6 +50,11 @@ public class Authorization {
         }
     }
 
+    /** The identity provider's subject of the verified token, even for users not yet known to TransitHub. */
+    public Optional<String> currentSubject() {
+        return principals.currentSubject();
+    }
+
     /** The signed-in TransitHub user, if any. */
     public Optional<UUID> currentUserId() {
         return principals.current().map(Principal::userId);

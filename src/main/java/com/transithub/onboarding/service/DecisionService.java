@@ -55,12 +55,13 @@ public class DecisionService {
     private final CurrentActor currentActor;
     private final AuditRecorder audit;
     private final NotificationOutbox notifications;
+    private final InvitationService invitations;
     private final Clock clock;
     private final Duration appealWindow;
 
     DecisionService(RegistrationService registrations, CompanyRepository companies, DecisionRepository decisions,
                     VerificationRepository verification, Authorization authorization, CurrentActor currentActor,
-                    AuditRecorder audit, NotificationOutbox notifications, Clock clock,
+                    AuditRecorder audit, NotificationOutbox notifications, InvitationService invitations, Clock clock,
                     @Value("${transithub.onboarding.appeal-window-days:30}") int appealWindowDays) {
         this.registrations = registrations;
         this.companies = companies;
@@ -70,6 +71,7 @@ public class DecisionService {
         this.currentActor = currentActor;
         this.audit = audit;
         this.notifications = notifications;
+        this.invitations = invitations;
         this.clock = clock;
         this.appealWindow = Duration.ofDays(appealWindowDays);
     }
@@ -136,6 +138,7 @@ public class DecisionService {
 
         notifyDecision(saved, "registration.approved",
                 Map.of("reference", saved.getReference(), "companyCode", savedCompany.getCompanyCode()));
+        invitations.issue(savedCompany, saved);   // AC-R1-EST-04, same transaction
         return new Approved(saved, savedCompany);
     }
 

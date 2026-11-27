@@ -15,6 +15,7 @@
 | 3c | Submission (immutable submitted version), duplicate flagging, locking | AC-R1-SUB-01…03; 144 tests |
 | 5a | Verification: independent assignment, assessments, information requests, recommendation; notification outbox | AC-R1-VER-01…07 |
 | 5b | Recommendation review, approve/reject, company established as `TH-ZM-nnnnnn`; direct company creation removed | AC-R1-DEC-01…05, EST-01…03; 164 tests |
+| 5c | First Company Administrator invitation (hashed single-use token, 7 days, reissue); company activated on acceptance. **Demo script automated** (`ReleaseOneDemoScriptTest`) | AC-R1-EST-04…06; 173 tests |
 
 ---
 
@@ -94,7 +95,7 @@
 - **Remove** `POST /api/v1/companies` and the `company.create-direct` permission (AC-R1-EST-03).
 - **Acceptance criteria:** AC-R1-DEC-01…06, AC-R1-EST-01…03.
 
-### #11 Step 5c: first Company Administrator invitation
+### #11 Step 5c: first Company Administrator invitation — **DONE**
 **Labels:** `backend`
 - Invitation (single-use, 7-day expiry) to the primary representative.
 - On acceptance: Keycloak user, `COMPANY_ADMINISTRATOR` assignment and company status Active. Reissue path.
@@ -106,6 +107,7 @@
 - Read-only audit trail endpoint for `audit.view` (UC-X-AUD-01).
 
 ### #13 Notifications (email and SMS), Zambian providers
+- **Security note:** the invitation's raw token sits in `notification_outbox.parameters` until sent. The sender must clear it (or the outbox purge old sent rows) once delivered.
 **Labels:** `backend`, `infra`
 - A notification port with email and SMS adapters, choosing providers that satisfy the data-protection answers (#3).
 - Used for invitations, information requests and decisions. Development uses a log-only adapter.

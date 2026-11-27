@@ -22,19 +22,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Builds registrations the way a real tablet and officer would, for tests
  * of later steps (verification, decision).
  */
-final class RegistrationFixtures {
+public final class RegistrationFixtures {
 
     static final byte[] PDF = "%PDF-1.7 certificate".getBytes(StandardCharsets.US_ASCII);
     static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 7};
 
     private final MockMvc mockMvc;
 
-    RegistrationFixtures(MockMvc mockMvc) {
+    public RegistrationFixtures(MockMvc mockMvc) {
         this.mockMvc = mockMvc;
     }
 
     /** A complete, submitted registration captured by {@code officer}; returns its id. */
-    UUID submitted(TestUsers.TestUser officer) throws Exception {
+    public UUID submitted(TestUsers.TestUser officer) throws Exception {
         UUID id = completeDraft(officer, "PACRA-" + UUID.randomUUID().toString().substring(0, 12),
                 "Kafue Coaches " + UUID.randomUUID().toString().substring(0, 6), "Kafue");
         mockMvc.perform(post("/api/v1/registrations/" + id + "/submission").with(officer.token())
@@ -45,7 +45,7 @@ final class RegistrationFixtures {
     }
 
     /** Details, one representative, one evidence document and a signature. */
-    UUID completeDraft(TestUsers.TestUser officer, String registrationNumber, String legalName, String district)
+    public UUID completeDraft(TestUsers.TestUser officer, String registrationNumber, String legalName, String district)
             throws Exception {
         UUID id = UuidV7.generate();
         UUID representative = UuidV7.generate();
@@ -79,12 +79,48 @@ final class RegistrationFixtures {
         return id;
     }
 
-    long version(TestUsers.TestUser user, UUID id) throws Exception {
+    /**
+     * Takes a submitted registration through verification, review and
+     * approval with fresh, independent staff; returns the response body.
+     */
+    public String approve(TestUsers users, UUID id) throws Exception {
+        TestUsers.TestUser supervisor = users.platform(com.transithub.identity.Role.REGISTRATION_SUPERVISOR);
+        TestUsers.TestUser verifier = users.platform(com.transithub.identity.Role.VERIFICATION_OFFICER);
+        TestUsers.TestUser reviewer = users.platform(com.transithub.identity.Role.RECOMMENDATION_REVIEWER);
+        TestUsers.TestUser approver = users.platform(com.transithub.identity.Role.REGISTRATION_APPROVER);
+
+        command(supervisor, id, "/verification/assignment", """
+                {"version": %d, "verifierId": "%s"}
+                """.formatted(version(supervisor, id), verifier.id()));
+        String evidenceId = JsonPath.read(json(verifier, "/api/v1/registrations/" + id), "$.evidence[0].id");
+        command(verifier, id, "/verification/evidence/" + evidenceId + "/assessment", """
+                {"version": %d, "outcome": "ACCEPTED", "findings": "Valid"}
+                """.formatted(version(verifier, id)));
+        command(verifier, id, "/verification/recommendation", """
+                {"version": %d, "recommendation": "APPROVE", "reasons": "All valid"}
+                """.formatted(version(verifier, id)));
+        command(reviewer, id, "/recommendation-review", """
+                {"version": %d, "outcome": "ENDORSE"}
+                """.formatted(version(reviewer, id)));
+        return command(approver, id, "/decision/approval", """
+                {"version": %d, "rationale": "Requirements met"}
+                """.formatted(version(approver, id)));
+    }
+
+    /** Sends a command and expects success; returns the response body. */
+    public String command(TestUsers.TestUser user, UUID id, String path, String body) throws Exception {
+        return mockMvc.perform(post("/api/v1/registrations/" + id + path).with(user.token())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().is2xxSuccessful())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    public long version(TestUsers.TestUser user, UUID id) throws Exception {
         return ((Number) JsonPath.read(mockMvc.perform(get("/api/v1/registrations/" + id).with(user.token()))
                 .andReturn().getResponse().getContentAsString(), "$.version")).longValue();
     }
 
-    String json(TestUsers.TestUser user, String path) throws Exception {
+    public String json(TestUsers.TestUser user, String path) throws Exception {
         return mockMvc.perform(get(path).with(user.token())).andReturn().getResponse().getContentAsString();
     }
 }
