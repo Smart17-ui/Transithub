@@ -3,6 +3,15 @@
 **Status:** **Approved for build** by the product owner (26 November 2026). This is the build specification for Release 1.
 **Basis:** [ADR-0001 to 0015](../adr/README.md), the decision log in [recommendations.md](../engineering/recommendations.md), use cases in [02-use-cases.md](../analysis/02-use-cases.md), and BP-01.01 rules BR-ONB-012–092.
 
+> **Change notice, 27 November 2026 (product owner).** Verification is lighter but traceable:
+> - **One Compliance Officer** (role code `VERIFICATION_OFFICER`) takes a submitted application, reviews the documents, records **registry verifications** (PACRA and RTSA required; ZRA optional) and **approves or declines** it. The recommendation, independent review and separate approver steps (AC-R1-VER-07, AC-R1-DEC-01, -02) are retired, as are the Recommendation Reviewer and Registration Approver roles.
+> - **Separation of duties kept:** whoever prepared, edited or signed for an application can neither take it nor decide on it. Supervisors may still assign or reassign reviews.
+> - **Submission now requires** the PACRA registration number, the RTSA Road Service Licence number, the Certificate of Incorporation and the Road Service Licence. Other documents are optional.
+> - **Approval requires** every current document accepted, potential duplicates reviewed, and the latest PACRA and RTSA verifications showing a match.
+> - Lifecycle: `Draft → Submitted → Under review ⇄ Information requested → Approved | Declined`. `RECOMMENDED` remains only for records created before this change.
+>
+> Sections 3–5 below keep the original wording for history; where they differ, this notice applies.
+
 > **Rule traceability caveat.** Rule references below are at **group level** (e.g. BR-ONB-012–020). The full text of BR-ONB-012–142 is not yet in the repo. Before building each feature, its criteria are checked against the exact rule text, and any difference is raised with you. Items marked **[check rule text]** are most likely to need it.
 
 ---
