@@ -1,6 +1,12 @@
 # TransitHub Frontend
 
-First online testing slice for the staff workspace. It uses React, TypeScript and Vite, with Mantine UI, TanStack Query and Keycloak OIDC. It can create and reopen a registration, edit its details, display server-provided `allowedActions`, submit, withdraw, and view audit history.
+The online staff workspace. It uses React, TypeScript and Vite, with Mantine UI, TanStack Query and Keycloak OIDC.
+
+- **Work queue** (`/`): registrations by stage (drafts, to assign, in verification, review & decision, closed), with counts and search.
+- **Registration page** (`/registrations/:id`): details, representatives, evidence, duplicates, verification and recommendation history, and the next actions. Buttons appear only for actions the server lists in `allowedActions`, so roles and separation of duties are enforced by the backend, not the screen.
+- **New registration** (`/registrations/new`): online capture of a draft.
+
+Source layout: `src/pages/` (one file per route), `src/components/commands.tsx` (one dialog per registration command), `src/components/common.tsx` (labels, badges, error messages, staff names), `src/api/` (typed API client).
 
 Offline field capture is intentionally not included yet; the device trial in backlog item #8 must guide that implementation.
 
