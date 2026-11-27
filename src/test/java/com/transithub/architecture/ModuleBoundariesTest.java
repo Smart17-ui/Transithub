@@ -76,11 +76,13 @@ class ModuleBoundariesTest {
 
     /**
      * Lifecycles change only through commands (ADR-0006): no API request
-     * type may carry a status field that a client could set directly.
+     * body (a {@code *Request} type in an {@code api} package) may carry a
+     * status field that a client could set directly.
      */
     @ArchTest
     static final ArchRule requestsCannotSetStatus =
-            fields().that().areDeclaredInClassesThat().haveSimpleNameEndingWith("Request")
+            fields().that().areDeclaredInClassesThat().resideInAPackage("..api..")
+                    .and().areDeclaredInClassesThat().haveSimpleNameEndingWith("Request")
                     .should().notHaveName("status")
                     .allowEmptyShould(true);
 

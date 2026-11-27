@@ -28,12 +28,6 @@ public enum Permission {
 
     // Companies
     COMPANY_VIEW("company.view"),
-    /**
-     * TEMPORARY: the caller-supplied-code endpoint {@code POST /api/v1/companies}.
-     * Removed with that endpoint in Release 1 step 5 (AC-R1-EST-03), when
-     * companies are only established by approval.
-     */
-    COMPANY_CREATE_DIRECT("company.create-direct"),
 
     // Platform administration
     PLATFORM_USER_MANAGE("platform-user.manage"),

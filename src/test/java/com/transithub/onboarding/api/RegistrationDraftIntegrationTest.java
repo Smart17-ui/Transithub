@@ -258,7 +258,7 @@ class RegistrationDraftIntegrationTest {
     @Test
     void companyUsersCannotReachRegistrationsAtAll() throws Exception {
         UUID id = startDraft();
-        UUID companyId = TestCompanies.create(mockMvc, users);
+        UUID companyId = com.transithub.onboarding.TestCompanies.create(jdbc);
         TestUsers.TestUser companyAdmin = users.inCompany(Role.COMPANY_ADMINISTRATOR, companyId);
 
         mockMvc.perform(get("/api/v1/registrations/" + id).with(companyAdmin.token()))
@@ -291,22 +291,5 @@ class RegistrationDraftIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.version")).longValue();
-    }
-
-    /** Creates a company through the temporary direct endpoint (removed in step 5). */
-    static final class TestCompanies {
-
-        static UUID create(MockMvc mockMvc, TestUsers users) throws Exception {
-            String code = "TH-G-" + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
-            MvcResult result = mockMvc.perform(post("/api/v1/companies")
-                            .with(users.platform(Role.PLATFORM_ADMINISTRATOR).token())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {"companyCode": "%s", "legalName": "Some Company %s"}
-                                    """.formatted(code, code)))
-                    .andExpect(status().isCreated())
-                    .andReturn();
-            return UUID.fromString(JsonPath.read(result.getResponse().getContentAsString(), "$.id"));
-        }
     }
 }

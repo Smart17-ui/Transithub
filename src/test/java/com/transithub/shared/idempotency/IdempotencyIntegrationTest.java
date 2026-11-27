@@ -26,7 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * AC-R1-X-05: a retried request with the same Idempotency-Key never runs
- * twice; reusing a key for a different request is refused.
+ * twice; reusing a key for a different request is refused. Exercised on
+ * "start a registration".
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,90 +35,73 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(PlatformScopeExtension.class)
 class IdempotencyIntegrationTest {
 
+    private static final String START = "/api/v1/registrations";
+
     @Autowired
     private MockMvc mockMvc;
-
-    private TestUsers.TestUser admin;
-
-    @BeforeEach
-    void signInAsPlatformAdministrator() {
-        admin = new TestUsers(jdbc).platform(Role.PLATFORM_ADMINISTRATOR);
-    }
 
     @Autowired
     private JdbcClient jdbc;
 
+    private TestUsers.TestUser officer;
+
+    @BeforeEach
+    void signIn() {
+        officer = new TestUsers(jdbc).platform(Role.REGISTRATION_OFFICER);
+    }
+
     @Test
     void AC_R1_X_05_retryWithSameKeyReplaysTheOriginalResponse() throws Exception {
         String key = UUID.randomUUID().toString();
-        String code = uniqueCode();
-        String body = companyJson(code, "Idempotent Company");
+        String name = uniqueName();
 
-        MvcResult first = mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+        MvcResult first = mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, key)
+                        .contentType(MediaType.APPLICATION_JSON).content(draft(name)))
                 .andExpect(status().isCreated())
                 .andExpect(header().doesNotExist(IdempotencyFilter.REPLAYED_HEADER))
                 .andReturn();
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+        mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, key)
+                        .contentType(MediaType.APPLICATION_JSON).content(draft(name)))
                 .andExpect(status().isCreated())
                 .andExpect(header().string(IdempotencyFilter.REPLAYED_HEADER, "true"))
                 .andExpect(header().string("Location", first.getResponse().getHeader("Location")))
-                .andExpect(jsonPath("$.companyCode").value(code));
+                .andExpect(jsonPath("$.details.legalName").value(name));
 
-        assertEquals(1, companiesWithCode(code), "the retry must not create a second company");
+        assertEquals(1, registrationsNamed(name), "the retry must not create a second registration");
     }
 
     @Test
     void AC_R1_X_05_sameKeyWithDifferentBodyIsRefused() throws Exception {
         String key = UUID.randomUUID().toString();
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(uniqueCode(), "First Body")))
+        mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, key)
+                        .contentType(MediaType.APPLICATION_JSON).content(draft(uniqueName())))
                 .andExpect(status().isCreated());
 
-        String otherCode = uniqueCode();
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(otherCode, "Second Body")))
+        String otherName = uniqueName();
+        mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, key)
+                        .contentType(MediaType.APPLICATION_JSON).content(draft(otherName)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("idempotency-key-reused"));
 
-        assertEquals(0, companiesWithCode(otherCode));
+        assertEquals(0, registrationsNamed(otherName));
     }
 
     @Test
     void AC_R1_X_05_validationErrorsAreReplayedToo() throws Exception {
         String key = UUID.randomUUID().toString();
         String invalid = """
-                {"companyCode": "", "legalName": ""}
+                {"channel": "FIELD", "details": {"contactEmail": "not-an-email"}}
                 """;
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(invalid))
+        mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, key)
+                        .contentType(MediaType.APPLICATION_JSON).content(invalid))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("validation-failed"));
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(invalid))
+        mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, key)
+                        .contentType(MediaType.APPLICATION_JSON).content(invalid))
                 .andExpect(status().isBadRequest())
                 .andExpect(header().string(IdempotencyFilter.REPLAYED_HEADER, "true"))
                 .andExpect(jsonPath("$.code").value("validation-failed"));
@@ -125,43 +109,38 @@ class IdempotencyIntegrationTest {
 
     @Test
     void invalidKeyIsRejected() throws Exception {
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header(IdempotencyFilter.HEADER, "has spaces in it")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(uniqueCode(), "Bad Key")))
+        mockMvc.perform(post(START).with(officer.token()).header(IdempotencyFilter.HEADER, "has spaces in it")
+                        .contentType(MediaType.APPLICATION_JSON).content(draft(uniqueName())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("idempotency-key-invalid"));
     }
 
     @Test
     void requestsWithoutAKeyAreNotAffected() throws Exception {
-        String code = uniqueCode();
+        String name = uniqueName();
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code, "No Key Company")))
+        mockMvc.perform(post(START).with(officer.token())
+                        .contentType(MediaType.APPLICATION_JSON).content(draft(name)))
                 .andExpect(status().isCreated())
                 .andExpect(header().doesNotExist(IdempotencyFilter.REPLAYED_HEADER));
 
-        assertEquals(1, companiesWithCode(code));
+        assertEquals(1, registrationsNamed(name));
     }
 
-    private int companiesWithCode(String code) {
-        return jdbc.sql("SELECT COUNT(*) FROM companies WHERE company_code = :code")
-                .param("code", code)
+    private int registrationsNamed(String name) {
+        return jdbc.sql("SELECT COUNT(*) FROM company_registration WHERE legal_name = :name")
+                .param("name", name)
                 .query(Integer.class)
                 .single();
     }
 
-    private static String uniqueCode() {
-        return "TH-IDM-" + UUID.randomUUID().toString().substring(0, 8);
+    private static String uniqueName() {
+        return "Idempotent Ltd " + UUID.randomUUID();
     }
 
-    private static String companyJson(String code, String legalName) {
+    private static String draft(String legalName) {
         return """
-                {"companyCode": "%s", "legalName": "%s"}
-                """.formatted(code, legalName);
+                {"channel": "FIELD", "details": {"legalName": "%s"}}
+                """.formatted(legalName);
     }
 }

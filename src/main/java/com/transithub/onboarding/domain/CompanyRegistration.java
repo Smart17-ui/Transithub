@@ -14,8 +14,12 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Persistable;
 
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
+import com.transithub.onboarding.domain.exception.NotAssignedVerifierException;
+import com.transithub.onboarding.domain.exception.RecommendationNotEndorsedException;
+import com.transithub.onboarding.domain.exception.VerificationIncompleteException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
+import com.transithub.onboarding.domain.exception.SubmissionIncompleteException;
 import com.transithub.onboarding.domain.exception.SyncConflictOpenException;
 
 import jakarta.persistence.CascadeType;
@@ -74,6 +78,22 @@ public class CompanyRegistration implements Persistable<UUID> {
     /** An unresolved sync conflict blocks every change and submission (AC-R1-SYN-05). */
     @Column(name = "open_conflict_id")
     private @Nullable UUID openConflictId;
+
+    /** The Verification Officer currently responsible (AC-R1-VER-01). */
+    @Column(name = "assigned_verifier")
+    private @Nullable String assignedVerifier;
+
+    /** The independent reviewer who endorsed the current recommendation (BR-ONB-062). */
+    @Column(name = "recommendation_endorsed_by")
+    private @Nullable String recommendationEndorsedBy;
+
+    /** After a rejection: the last moment an appeal may be lodged (AC-R1-DEC-04). */
+    @Column(name = "appeal_deadline")
+    private @Nullable Instant appealDeadline;
+
+    /** After approval: the company this registration established (AC-R1-EST-01). */
+    @Column(name = "company_id")
+    private @Nullable UUID companyId;
 
     @Embedded
     private CompanyDetails details;
@@ -286,6 +306,166 @@ public class CompanyRegistration implements Persistable<UUID> {
         return evidence.stream().filter(item -> item.getId().equals(evidenceId)).findFirst();
     }
 
+    /**
+     * UC-01.01-06: submit a complete draft. Returns exactly what was
+     * submitted, to be stored unchangeably (AC-R1-SUB-01). After this the
+     * draft can no longer be edited (AC-R1-SUB-03).
+     *
+     * @throws SubmissionIncompleteException listing what is still missing
+     */
+    public SubmittedVersion submit(String actor, Instant now) {
+        requireEditable("submit");
+        List<String> missing = missingForSubmission();
+        if (!missing.isEmpty()) {
+            throw new SubmissionIncompleteException(missing);
+        }
+
+        SubmittedVersion submitted = new SubmittedVersion(
+                reference,
+                contentRevision,
+                snapshot(),
+                activeEvidence().stream()
+                        .map(item -> new SubmittedVersion.EvidenceItem(item.getId(), item.getEvidenceType(),
+                                item.getFileName(), item.getContentType(), item.getSizeBytes(), item.getSha256()))
+                        .toList(),
+                activeRepresentatives().stream()
+                        .map(representative -> currentResponseOf(representative.getId()))
+                        .flatMap(Optional::stream)
+                        .map(ack -> new SubmittedVersion.AcknowledgementItem(ack.getRepresentativeId(),
+                                ack.getOutcome().name(), ack.getDeclarationVersion(), ack.getContentRevision(),
+                                ack.getRecordedBy(), ack.getRecordedAt()))
+                        .toList());
+
+        changeStatus(RegistrationStatus.SUBMITTED, actor, null, now);
+        return submitted;
+    }
+
+    // --- verification (UC-01.01-08…10; AC-R1-VER-01…07) -------------------------
+
+    /**
+     * A supervisor assigns (or reassigns) verification. The first assignment
+     * starts verification; independence is checked by the service, which
+     * knows everyone who took part in the registration.
+     */
+    public void assignVerifier(String verifierId, String actor, Instant now) {
+        switch (status) {
+            case SUBMITTED -> changeStatus(RegistrationStatus.UNDER_VERIFICATION, actor, null, now);
+            case UNDER_VERIFICATION, AWAITING_INFORMATION -> updatedAt = now;   // reassignment
+            default -> throw new InvalidRegistrationStateException("assign a verifier to", status);
+        }
+        assignedVerifier = Objects.requireNonNull(verifierId);
+    }
+
+    /** Assessment or duplicate review: verification work that does not change the status. */
+    public void recordVerificationWork(String actor, Instant now) {
+        requireAssignedVerifierAt(RegistrationStatus.UNDER_VERIFICATION, actor, "verify");
+        updatedAt = now;
+    }
+
+    /** AC-R1-VER-04: the verifier needs more information; the clock waits for the applicant. */
+    public void requestInformation(String actor, Instant now) {
+        requireAssignedVerifierAt(RegistrationStatus.UNDER_VERIFICATION, actor, "request information on");
+        changeStatus(RegistrationStatus.AWAITING_INFORMATION, actor, null, now);
+    }
+
+    /**
+     * A document supplied in answer to an information request. It supports
+     * verification without changing what the representatives acknowledged,
+     * so it is not a material change.
+     * [check rule text: whether post-submission evidence needs re-acknowledgement]
+     */
+    public Evidence attachRequestedEvidence(UUID evidenceId, UUID informationRequestId, EvidenceType type,
+                                            Evidence.StoredFile file, String actor, Instant now) {
+        if (status != RegistrationStatus.AWAITING_INFORMATION) {
+            throw new InvalidRegistrationStateException("supply requested evidence for", status);
+        }
+        Evidence item = new Evidence(evidenceId, this, type, file, informationRequestId, actor, now);
+        evidence.add(item);
+        recordChange("evidence[" + evidenceId + "]", null,
+                type + ": " + file.fileName() + " (requested information)", false, actor, now);
+        touch(false, actor, now);
+        return item;
+    }
+
+    /** AC-R1-VER-05: the information was provided; verification resumes. */
+    public void informationProvided(String actor, Instant now) {
+        if (status != RegistrationStatus.AWAITING_INFORMATION) {
+            throw new InvalidRegistrationStateException("provide information for", status);
+        }
+        changeStatus(RegistrationStatus.UNDER_VERIFICATION, actor, null, now);
+    }
+
+    /**
+     * AC-R1-VER-07: the verifier completes verification with a
+     * recommendation. {@code outstanding} is what the service found still
+     * unassessed or unreviewed; it must be empty.
+     */
+    public void recommend(List<String> outstanding, String actor, Instant now) {
+        requireAssignedVerifierAt(RegistrationStatus.UNDER_VERIFICATION, actor, "recommend on");
+        if (!outstanding.isEmpty()) {
+            throw new VerificationIncompleteException(outstanding);
+        }
+        recommendationEndorsedBy = null;
+        changeStatus(RegistrationStatus.RECOMMENDED, actor, null, now);
+    }
+
+    // --- review and decision (UC-01.01-11, -12; AC-R1-DEC-01…05) -----------------
+
+    /** AC-R1-DEC-01: an independent reviewer endorses the recommendation. */
+    public void endorseRecommendation(String actor, Instant now) {
+        requireStatus(RegistrationStatus.RECOMMENDED, "review the recommendation of");
+        if (recommendationEndorsedBy != null) {
+            throw new InvalidRegistrationStateException("review again an already endorsed recommendation on", status);
+        }
+        recommendationEndorsedBy = actor;
+        updatedAt = now;
+    }
+
+    /** AC-R1-DEC-02: the reviewer challenges it; it goes back to the verifier. */
+    public void challengeRecommendation(String actor, String comments, Instant now) {
+        requireStatus(RegistrationStatus.RECOMMENDED, "review the recommendation of");
+        if (recommendationEndorsedBy != null) {
+            throw new InvalidRegistrationStateException("challenge an already endorsed recommendation on", status);
+        }
+        changeStatus(RegistrationStatus.UNDER_VERIFICATION, actor, comments, now);
+    }
+
+    /** AC-R1-DEC-03: approval; {@code establishedCompanyId} is created in the same transaction. */
+    public void approve(UUID establishedCompanyId, String actor, String rationale, Instant now) {
+        requireEndorsedRecommendation("approve");
+        companyId = Objects.requireNonNull(establishedCompanyId);
+        changeStatus(RegistrationStatus.APPROVED, actor, rationale, now);
+    }
+
+    /** AC-R1-DEC-04: rejection with reasons; an appeal may be lodged until {@code appealDeadline}. */
+    public void reject(String actor, String reasons, Instant appealDeadline, Instant now) {
+        requireEndorsedRecommendation("reject");
+        this.appealDeadline = Objects.requireNonNull(appealDeadline);
+        changeStatus(RegistrationStatus.REJECTED, actor, reasons, now);
+    }
+
+    private void requireEndorsedRecommendation(String action) {
+        requireStatus(RegistrationStatus.RECOMMENDED, action);
+        if (recommendationEndorsedBy == null) {
+            throw new RecommendationNotEndorsedException();
+        }
+    }
+
+    private void requireStatus(RegistrationStatus required, String action) {
+        if (status != required) {
+            throw new InvalidRegistrationStateException(action, status);
+        }
+    }
+
+    private void requireAssignedVerifierAt(RegistrationStatus required, String actor, String action) {
+        if (status != required) {
+            throw new InvalidRegistrationStateException(action, status);
+        }
+        if (!actor.equals(assignedVerifier)) {
+            throw new NotAssignedVerifierException();
+        }
+    }
+
     /** The current details and active representatives, for sync and conflicts. */
     public DraftSnapshot snapshot() {
         return new DraftSnapshot(details, activeRepresentatives().stream()
@@ -428,6 +608,13 @@ public class CompanyRegistration implements Persistable<UUID> {
         currentResponseOf(representativeId).ifPresent(previous -> previous.invalidate("Superseded by a new response", now));
     }
 
+    private void changeStatus(RegistrationStatus to, String actor, @Nullable String reason, Instant now) {
+        pendingStatusChanges.add(new RegistrationHistory.StatusChange(id, status, to, actor, reason, now));
+        status = to;
+        lastChangedBy = actor;
+        updatedAt = now;
+    }
+
     private void requireDraft(String action) {
         if (status != RegistrationStatus.DRAFT) {
             throw new InvalidRegistrationStateException(action, status);
@@ -514,6 +701,22 @@ public class CompanyRegistration implements Persistable<UUID> {
 
     public @Nullable UUID getOpenConflictId() {
         return openConflictId;
+    }
+
+    public @Nullable String getAssignedVerifier() {
+        return assignedVerifier;
+    }
+
+    public @Nullable String getRecommendationEndorsedBy() {
+        return recommendationEndorsedBy;
+    }
+
+    public @Nullable Instant getAppealDeadline() {
+        return appealDeadline;
+    }
+
+    public @Nullable UUID getCompanyId() {
+        return companyId;
     }
 
     public CompanyDetails getDetails() {

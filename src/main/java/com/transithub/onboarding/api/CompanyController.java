@@ -1,25 +1,24 @@
 
 package com.transithub.onboarding.api;
 
-import java.net.URI;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.transithub.onboarding.domain.Company;
 import com.transithub.onboarding.service.CompanyService;
 
-import jakarta.validation.Valid;
 
+/**
+ * Companies. There is deliberately no "create": a company is established
+ * only by approving its registration (AC-R1-EST-03, UC-01.01-12).
+ */
 @RestController
 @RequestMapping("/api/v1/companies")
 public class CompanyController {
@@ -28,30 +27,6 @@ public class CompanyController {
 
     public CompanyController(CompanyService companyService) {
         this.companyService = companyService;
-    }
-
-    @PostMapping
-    public ResponseEntity<CompanyResponse> createCompany(
-            @Valid @RequestBody CreateCompanyRequest request) {
-
-        Company company = companyService.createCompany(
-                request.companyCode(),
-                request.legalName(),
-                request.tradingName(),
-                request.registrationNumber(),
-                request.contactEmail(),
-                request.contactPhone()
-        );
-
-        URI location = ServletUriComponentsBuilder
-                .fromCurrentRequest()
-                .path("/{id}")
-                .buildAndExpand(company.getId())
-                .toUri();
-
-        return ResponseEntity
-                .created(location)
-                .body(CompanyResponse.from(company));
     }
 
     @GetMapping("/{companyId}")

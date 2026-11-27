@@ -10,6 +10,11 @@
 | 1a | Modules, UUIDv7, error codes, audit trail, idempotency, optimistic locking | 30 tests |
 | 1b | Database tenant isolation (runtime role, row-level security, schema guard) | AC-R1-X-01 database layer |
 | 2a | Sign-in (OIDC), roles and permissions, tenant scope from roles, first-admin bootstrap; provider-neutral for Keycloak; health endpoint | AC-R1-X-01 HTTP layer; 65 tests |
+| 3a | Registration drafts, representatives, change history; encrypted evidence; signature acknowledgement with re-signing | AC-R1-CAP-01…06, ACK-01…04 |
+| 3b | Offline sync: retry detection, conflicts (both versions kept, supervisor resolves), quarantine | AC-R1-SYN-01…08 |
+| 3c | Submission (immutable submitted version), duplicate flagging, locking | AC-R1-SUB-01…03; 144 tests |
+| 5a | Verification: independent assignment, assessments, information requests, recommendation; notification outbox | AC-R1-VER-01…07 |
+| 5b | Recommendation review, approve/reject, company established as `TH-ZM-nnnnnn`; direct company creation removed | AC-R1-DEC-01…05, EST-01…03; 164 tests |
 
 ---
 
@@ -41,7 +46,7 @@
 - Revocation takes effect on the user's next request.
 - **Done when:** an administrator can set up Joseph, Chanda, Mwila and Ruth with their roles, and tests cover separation-of-duty-safe role combinations.
 
-### #5 Step 3a: registration drafts (capture, evidence, acknowledgement)
+### #5 Step 3a: registration drafts (capture, evidence, acknowledgement) — **DONE**
 **Labels:** `backend`
 - `CompanyRegistration` aggregate with an explicit lifecycle (ADR-0006).
   - Contains the draft, representatives (one or more) and evidence metadata.
@@ -50,18 +55,23 @@
 - Status-history table; audit on every command.
 - **Acceptance criteria:** AC-R1-CAP-01…06, AC-R1-ACK-01…04.
 
-### #6 Step 3b: offline sync API and conflicts
+### #6 Step 3b: offline sync API and conflicts — **DONE**
 **Labels:** `backend`
 - Idempotent sync endpoint keyed by the draft's UUID.
 - Readable reference `REG-<year>-<6 digits>` assigned on first sync.
 - Sync records; SyncConflict with both versions kept; supervisor resolution; quarantine when the capturer's permission was revoked.
 - **Acceptance criteria:** AC-R1-SYN-01…08.
 
-### #7 Step 3c: submission and duplicate flagging
+### #7 Step 3c: submission and duplicate flagging — **DONE**
 **Labels:** `backend`
 - Immutable snapshot of the submitted version; no officer edits after submission.
 - Possible-duplicate flag on matching registration number, or matching legal name plus district.
 - **Acceptance criteria:** AC-R1-SUB-01…03.
+
+### #7a Release synced data from quarantine
+**Labels:** `backend`
+- A supervisor reviews a quarantined item and either turns it into a draft (assigned to an active officer) or closes it with a reason. Audited.
+- **Done when:** nothing in quarantine can only be viewed; each item can be acted on.
 
 ### #8 Step 4: device trial (offline PWA on the platform tablet)
 **Labels:** `frontend`. **Blocked** until the tablet model is known and one device is available.
@@ -71,13 +81,13 @@
   - sync to the step 3b API.
 - **Done when:** a go or no-go decision is recorded as an ADR. No-go means React Native (ADR-0009).
 
-### #9 Step 5a: verification work
+### #9 Step 5a: verification work — **DONE**
 **Labels:** `backend`
 - Assign and reassign verification (G1 basic); refuse assignment to the capturer (separation of duties).
 - Evidence assessments, information requests (basic), provide information, recommendation.
 - **Acceptance criteria:** AC-R1-VER-01…07.
 
-### #10 Step 5b: review, decision and company establishment
+### #10 Step 5b: review, decision and company establishment — **DONE**
 **Labels:** `backend`
 - Recommendation review (endorse or challenge); approve or reject with reasons; appeal deadline (30-day setting).
 - Establish the company in the same transaction, with code `TH-ZM-nnnnnn` from a sequence.

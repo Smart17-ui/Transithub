@@ -28,6 +28,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import com.transithub.onboarding.domain.CompanyRegistration;
 import com.transithub.onboarding.domain.Declaration;
 import com.transithub.onboarding.domain.EvidenceType;
+import com.transithub.onboarding.repository.RegistrationSubmissionRepository;
 import com.transithub.onboarding.service.RegistrationService;
 
 import jakarta.validation.Valid;
@@ -101,6 +102,36 @@ class RegistrationController {
 
         return RegistrationResponse.from(registrations.updateRepresentative(
                 id, representativeId, request.version(), request.toDomain()));
+    }
+
+    record SubmitRequest(@jakarta.validation.constraints.NotNull Long version) {
+    }
+
+    record SubmissionResponse(RegistrationResponse registration, int submissionNo,
+                              List<RegistrationSubmissionRepository.DuplicateFlag> possibleDuplicates) {
+    }
+
+    /**
+     * UC-01.01-06: submit a complete draft. 422 {@code registration-incomplete}
+     * with the {@code missing} list if it is not complete yet.
+     */
+    @PostMapping("/{id}/submission")
+    SubmissionResponse submit(@PathVariable UUID id, @Valid @RequestBody SubmitRequest request) {
+        RegistrationService.Submitted submitted = registrations.submit(id, request.version());
+        return new SubmissionResponse(RegistrationResponse.from(submitted.registration()),
+                submitted.submissionNo(), submitted.possibleDuplicates());
+    }
+
+    /** Every submitted version, exactly as submitted (AC-R1-SUB-01). */
+    @GetMapping("/{id}/submissions")
+    List<RegistrationSubmissionRepository.Submission> submissions(@PathVariable UUID id) {
+        return registrations.submissions(id);
+    }
+
+    /** Possible duplicates found at submission, for the verifier (AC-R1-SUB-02). */
+    @GetMapping("/{id}/duplicate-flags")
+    List<RegistrationSubmissionRepository.DuplicateFlag> duplicateFlags(@PathVariable UUID id) {
+        return registrations.duplicateFlags(id);
     }
 
     /** Attach a document: PDF, JPEG or PNG, at most 10 MB (AC-R1-CAP-06). */

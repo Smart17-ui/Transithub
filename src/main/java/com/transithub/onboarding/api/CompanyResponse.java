@@ -14,6 +14,8 @@ public record CompanyResponse(
         String registrationNumber,
         String contactEmail,
         String contactPhone,
+        String operationalStatus,
+        UUID registrationId,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -27,6 +29,8 @@ public record CompanyResponse(
                 company.getRegistrationNumber(),
                 company.getContactEmail(),
                 company.getContactPhone(),
+                company.getOperationalStatus().name(),
+                company.getRegistrationId(),
                 company.getCreatedAt(),
                 company.getUpdatedAt()
         );

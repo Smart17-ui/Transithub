@@ -70,6 +70,10 @@ public class Evidence implements Persistable<UUID> {
     @Column(name = "removed_at")
     private @Nullable Instant removedAt;
 
+    /** Set when supplied in answer to an information request (AC-R1-VER-05). */
+    @Column(name = "information_request_id", updatable = false)
+    private @Nullable UUID informationRequestId;
+
     @Column(name = "removed_by")
     private @Nullable String removedBy;
 
@@ -82,6 +86,12 @@ public class Evidence implements Persistable<UUID> {
 
     Evidence(UUID id, CompanyRegistration registration, EvidenceType type, StoredFile file,
              String actor, Instant now) {
+        this(id, registration, type, file, null, actor, now);
+    }
+
+    Evidence(UUID id, CompanyRegistration registration, EvidenceType type, StoredFile file,
+             @Nullable UUID informationRequestId, String actor, Instant now) {
+        this.informationRequestId = informationRequestId;
         this.id = id;
         this.registration = registration;
         this.evidenceType = type;
@@ -101,6 +111,10 @@ public class Evidence implements Persistable<UUID> {
 
     public boolean isActive() {
         return removedAt == null;
+    }
+
+    public @Nullable UUID getInformationRequestId() {
+        return informationRequestId;
     }
 
     @PostPersist

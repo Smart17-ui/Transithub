@@ -1,6 +1,5 @@
 package com.transithub.identity;
 
-import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +14,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.jayway.jsonpath.JsonPath;
+import com.transithub.onboarding.TestCompanies;
 import com.transithub.shared.tenancy.PlatformScopeExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,13 +27,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Who may do what, through the real HTTP stack (ADR-0004, Release 1 spec
- * section 3, AC-R1-X-01).
+ * section 3, AC-R1-X-01). The write endpoint used is "start a registration",
+ * which needs {@code registration.capture}.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @ExtendWith(PlatformScopeExtension.class)
 class AccessControlIntegrationTest {
+
+    private static final String START = "/api/v1/registrations";
+    private static final String DRAFT = """
+            {"channel": "FIELD", "details": {"legalName": "Access Test Ltd"}}
+            """;
 
     @Autowired
     private MockMvc mockMvc;
@@ -41,12 +48,12 @@ class AccessControlIntegrationTest {
     private JdbcClient jdbc;
 
     private TestUsers users;
-    private TestUsers.TestUser admin;
+    private TestUsers.TestUser officer;
 
     @BeforeEach
     void setUp() {
         users = new TestUsers(jdbc);
-        admin = users.platform(Role.PLATFORM_ADMINISTRATOR);
+        officer = users.platform(Role.REGISTRATION_OFFICER);
     }
 
     @Test
@@ -59,9 +66,7 @@ class AccessControlIntegrationTest {
 
     @Test
     void writeRequestsWithoutATokenAreRejectedAsUnauthenticated() throws Exception {
-        mockMvc.perform(post("/api/v1/companies")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("unauthenticated"));
     }
@@ -69,10 +74,9 @@ class AccessControlIntegrationTest {
     @Test
     void csrfProtectionStillGuardsCookieBasedRequests() throws Exception {
         // A browser-forged request: cookies attached, no bearer token, no CSRF token.
-        mockMvc.perform(post("/api/v1/companies")
+        mockMvc.perform(post(START)
                         .cookie(new jakarta.servlet.http.Cookie("SESSION", "stolen-session"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isForbidden());
     }
 
@@ -86,79 +90,63 @@ class AccessControlIntegrationTest {
 
     @Test
     void otherActuatorEndpointsAreNotExposed() throws Exception {
-        mockMvc.perform(get("/actuator/env").with(admin.token()))
+        mockMvc.perform(get("/actuator/env").with(officer.token()))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void signedInButUnknownToTransitHubMayDoNothing() throws Exception {
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(TestUsers.unregistered().token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).with(TestUsers.unregistered().token())
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("access-denied"));
     }
 
     @Test
     void disabledAccountsMayDoNothing() throws Exception {
-        TestUsers.TestUser disabled = users.disabled(Role.PLATFORM_ADMINISTRATOR);
-
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(disabled.token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).with(users.disabled(Role.REGISTRATION_OFFICER).token())
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("access-denied"));
     }
 
     @Test
     void aRoleWithoutThePermissionIsRefused() throws Exception {
-        TestUsers.TestUser officer = users.platform(Role.REGISTRATION_OFFICER);
-
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(officer.token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).with(users.platform(Role.VERIFICATION_OFFICER).token())
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("access-denied"));
     }
 
     @Test
     void revokedAssignmentsGrantNothing() throws Exception {
-        TestUsers.TestUser revoked = users.platform(Role.PLATFORM_ADMINISTRATOR);
+        TestUsers.TestUser revoked = users.platform(Role.REGISTRATION_OFFICER);
         jdbc.sql("""
                 UPDATE role_assignment SET revoked_at = now(), revoked_by = 'test', revoke_reason = 'left'
                  WHERE user_id = :id
                 """).param("id", revoked.id()).update();
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(revoked.token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).with(revoked.token()).contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void auditEventsRecordTheSignedInUser() throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        MvcResult result = mockMvc.perform(post(START).with(officer.token())
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isCreated())
                 .andReturn();
+        UUID registrationId = UUID.fromString(JsonPath.read(result.getResponse().getContentAsString(), "$.id"));
 
-        UUID companyId = idFrom(result);
-        Map<String, Object> event = jdbc.sql("SELECT actor_id FROM audit_event WHERE entity_id = :id")
-                .param("id", companyId).query().singleRow();
-
-        assertEquals(admin.id().toString(), event.get("actor_id"));
+        assertEquals(officer.id().toString(), jdbc.sql(
+                        "SELECT actor_id FROM audit_event WHERE entity_id = :id AND action = 'registration.started'")
+                .param("id", registrationId).query(String.class).single());
     }
 
     @Test
     void AC_R1_X_01_companyAdministratorSeesOwnCompanyAndGets404ForAnother() throws Exception {
-        UUID companyA = createCompany();
-        UUID companyB = createCompany();
+        UUID companyA = TestCompanies.create(jdbc);
+        UUID companyB = TestCompanies.create(jdbc);
         TestUsers.TestUser adminOfA = users.inCompany(Role.COMPANY_ADMINISTRATOR, companyA);
 
         mockMvc.perform(get("/api/v1/companies/" + companyA).with(adminOfA.token()))
@@ -172,21 +160,18 @@ class AccessControlIntegrationTest {
     }
 
     @Test
-    void companyAdministratorCannotCreateCompanies() throws Exception {
-        TestUsers.TestUser adminOfA = users.inCompany(Role.COMPANY_ADMINISTRATOR, createCompany());
+    void companyAdministratorCannotStartRegistrations() throws Exception {
+        TestUsers.TestUser adminOfA = users.inCompany(Role.COMPANY_ADMINISTRATOR, TestCompanies.create(jdbc));
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(adminOfA.token())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).with(adminOfA.token()).contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void userInSeveralCompaniesMustChooseOneTheyBelongTo() throws Exception {
-        UUID companyA = createCompany();
-        UUID companyB = createCompany();
-        UUID companyC = createCompany();
+        UUID companyA = TestCompanies.create(jdbc);
+        UUID companyB = TestCompanies.create(jdbc);
+        UUID companyC = TestCompanies.create(jdbc);
         TestUsers.TestUser twoCompanies = users.inCompany(Role.COMPANY_ADMINISTRATOR, companyA);
         users.addRole(twoCompanies, Role.COMPANY_ADMINISTRATOR, companyB);
 
@@ -209,46 +194,29 @@ class AccessControlIntegrationTest {
     @Test
     void idempotencyKeysAreScopedToTheCaller() throws Exception {
         String key = UUID.randomUUID().toString();
-        TestUsers.TestUser otherAdmin = users.platform(Role.PLATFORM_ADMINISTRATOR);
+        TestUsers.TestUser otherOfficer = users.platform(Role.REGISTRATION_OFFICER);
 
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
-                        .header("Idempotency-Key", key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        mockMvc.perform(post(START).with(officer.token()).header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isCreated());
 
-        // Same key, different user and body: an independent request, not a reuse.
-        mockMvc.perform(post("/api/v1/companies")
-                        .with(otherAdmin.token())
-                        .header("Idempotency-Key", key)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
+        // Same key, different user: an independent request, not a replay of someone else's.
+        mockMvc.perform(post(START).with(otherOfficer.token()).header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(DRAFT))
                 .andExpect(status().isCreated())
                 .andExpect(header().doesNotExist("Idempotent-Replayed"));
     }
 
-    private UUID createCompany() throws Exception {
-        return idFrom(mockMvc.perform(post("/api/v1/companies")
-                        .with(admin.token())
+    @Test
+    void companiesCanNoLongerBeCreatedDirectly() throws Exception {
+        // AC-R1-EST-03: only approval establishes a company.
+        int status = mockMvc.perform(post("/api/v1/companies")
+                        .with(users.platform(Role.PLATFORM_ADMINISTRATOR).token())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(companyJson(code())))
-                .andExpect(status().isCreated())
-                .andReturn());
-    }
-
-    private static UUID idFrom(MvcResult result) {
-        String location = result.getResponse().getHeader("Location");
-        return UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
-    }
-
-    private static String code() {
-        return "TH-A-" + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
-    }
-
-    private static String companyJson(String code) {
-        return """
-                {"companyCode": "%s", "legalName": "Access Test %s"}
-                """.formatted(code, code);
+                        .content("""
+                                {"companyCode": "TH-HACK-1", "legalName": "Self-made Ltd"}
+                                """))
+                .andReturn().getResponse().getStatus();
+        assertEquals(true, status == 404 || status == 405, "expected no create endpoint, got " + status);
     }
 }

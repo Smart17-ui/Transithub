@@ -49,7 +49,6 @@ class RoleTest {
     @Test
     void companyAdministratorHasNoPlatformPowers() {
         Set<Permission> p = Role.COMPANY_ADMINISTRATOR.permissions();
-        assertFalse(p.contains(Permission.COMPANY_CREATE_DIRECT));
         assertFalse(p.contains(Permission.PLATFORM_USER_MANAGE));
         assertFalse(p.contains(Permission.ROLE_ASSIGN));
         assertFalse(p.contains(Permission.REGISTRATION_APPROVE));

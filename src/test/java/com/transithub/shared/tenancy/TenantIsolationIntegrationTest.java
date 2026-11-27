@@ -13,9 +13,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.transithub.identity.Role;
 import com.transithub.identity.TestUsers;
-import com.transithub.onboarding.domain.Company;
 import com.transithub.onboarding.repository.CompanyRepository;
-import com.transithub.onboarding.service.CompanyService;
+import com.transithub.onboarding.TestCompanies;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,8 +32,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @ActiveProfiles("test")
 class TenantIsolationIntegrationTest {
 
-    @Autowired
-    private CompanyService companyService;
 
     @Autowired
     private CompanyRepository companyRepository;
@@ -50,11 +47,8 @@ class TenantIsolationIntegrationTest {
     @BeforeEach
     void createTwoCompaniesAsPlatformStaff() {
         TestUsers users = new TestUsers(jdbc);
-        TestUsers.TestUser platformAdmin = users.platform(Role.PLATFORM_ADMINISTRATOR);
-        platformAdmin.run(() -> {
-            companyA = create("Company A").getId();
-            companyB = create("Company B").getId();
-        });
+        companyA = TestCompanies.create(jdbc, null, "Company A " + UUID.randomUUID());
+        companyB = TestCompanies.create(jdbc, null, "Company B " + UUID.randomUUID());
         companyAdminOfA = users.inCompany(Role.COMPANY_ADMINISTRATOR, companyA);
     }
 
@@ -99,11 +93,8 @@ class TenantIsolationIntegrationTest {
 
     @Test
     void AC_R1_X_01_companyUsersCannotCreateCompanies() {
-        // Layer 1, the application: no permission.
-        assertThrows(org.springframework.security.access.AccessDeniedException.class, () ->
-                companyAdminOfA.run(() -> create("Sneaky Company")));
-
-        // Layer 2, the database: even a direct insert in company scope is refused.
+        // The application has no "create company" at all (AC-R1-EST-03), and
+        // the database refuses even a direct insert in company scope.
         assertThrows(DataAccessException.class, () ->
                 TenantContext.runAs(TenantScope.company(companyA), () ->
                         jdbc.sql("""
@@ -135,10 +126,5 @@ class TenantIsolationIntegrationTest {
                     jdbc.sql("SELECT COUNT(*) FROM companies").query(Integer.class).single());
             assertEquals(0, visible);
         }
-    }
-
-    private Company create(String legalName) {
-        String code = "TH-I-" + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
-        return companyService.createCompany(code, legalName + " " + code, null, null, null, null);
     }
 }

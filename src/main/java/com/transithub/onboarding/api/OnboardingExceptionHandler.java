@@ -7,13 +7,16 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.transithub.onboarding.domain.exception.CompanyAlreadyExistsException;
+import com.transithub.onboarding.domain.exception.RecommendationNotEndorsedException;
 import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
+import com.transithub.onboarding.domain.exception.NotAssignedVerifierException;
+import com.transithub.onboarding.domain.exception.VerificationIncompleteException;
 import com.transithub.onboarding.domain.exception.RegistrationAlreadyExistsException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
+import com.transithub.onboarding.domain.exception.SubmissionIncompleteException;
 import com.transithub.onboarding.domain.exception.SyncConflictOpenException;
 import com.transithub.shared.web.ProblemCodes;
 
@@ -28,9 +31,35 @@ import static com.transithub.shared.web.ProblemCodes.problem;
 class OnboardingExceptionHandler {
 
     static final String REGISTRATION_ALREADY_EXISTS = "registration-already-exists";
+    static final String RECOMMENDATION_NOT_ENDORSED = "recommendation-not-endorsed";
     static final String INVALID_REGISTRATION_STATE = "invalid-registration-state";
     static final String DECLARATION_OUTDATED = "declaration-outdated";
     static final String SYNC_CONFLICT_OPEN = "sync-conflict-open";
+    static final String REGISTRATION_INCOMPLETE = "registration-incomplete";
+    static final String VERIFICATION_INCOMPLETE = "verification-incomplete";
+    static final String NOT_ASSIGNED_VERIFIER = "not-assigned-verifier";
+
+    @ExceptionHandler(VerificationIncompleteException.class)
+    ProblemDetail verificationIncomplete(VerificationIncompleteException exception) {
+        ProblemDetail body = problem(HttpStatus.UNPROCESSABLE_CONTENT, "Verification incomplete",
+                exception.getMessage(), VERIFICATION_INCOMPLETE);
+        body.setProperty("missing", exception.missing());
+        return body;
+    }
+
+    @ExceptionHandler(NotAssignedVerifierException.class)
+    ProblemDetail notAssignedVerifier(NotAssignedVerifierException exception) {
+        return problem(HttpStatus.FORBIDDEN, "Not the assigned verifier", exception.getMessage(),
+                NOT_ASSIGNED_VERIFIER);
+    }
+
+    @ExceptionHandler(SubmissionIncompleteException.class)
+    ProblemDetail incomplete(SubmissionIncompleteException exception) {
+        ProblemDetail body = problem(HttpStatus.UNPROCESSABLE_CONTENT, "Registration incomplete",
+                exception.getMessage(), REGISTRATION_INCOMPLETE);
+        body.setProperty("missing", exception.missing());
+        return body;
+    }
 
     @ExceptionHandler(UploadRejectedException.class)
     ProblemDetail uploadRejected(UploadRejectedException exception) {
@@ -65,10 +94,10 @@ class OnboardingExceptionHandler {
                 DECLARATION_OUTDATED);
     }
 
-    @ExceptionHandler(CompanyAlreadyExistsException.class)
-    ProblemDetail companyAlreadyExists(CompanyAlreadyExistsException exception) {
-        return problem(HttpStatus.CONFLICT, "Company already exists", exception.getMessage(),
-                CompanyConstraintProblemMapper.COMPANY_ALREADY_EXISTS);
+    @ExceptionHandler(RecommendationNotEndorsedException.class)
+    ProblemDetail notEndorsed(RecommendationNotEndorsedException exception) {
+        return problem(HttpStatus.CONFLICT, "Recommendation not endorsed", exception.getMessage(),
+                RECOMMENDATION_NOT_ENDORSED);
     }
 
     @ExceptionHandler(RegistrationNotFoundException.class)

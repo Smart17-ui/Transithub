@@ -10,6 +10,8 @@ import com.transithub.shared.id.UuidV7;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
@@ -63,6 +65,14 @@ public class Company implements Persistable<UUID> {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** The approved registration this company was established from (AC-R1-EST-01). */
+    @Column(name = "registration_id", updatable = false)
+    private UUID registrationId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "operational_status", nullable = false)
+    private CompanyOperationalStatus operationalStatus = CompanyOperationalStatus.ACTIVE;
+
     /** Optimistic locking: a second conflicting write is refused (ADR-0007). */
     @Version
     @Column(name = "version", nullable = false)
@@ -78,6 +88,19 @@ public class Company implements Persistable<UUID> {
 
     protected Company() {
         // Required by JPA.
+    }
+
+    /**
+     * UC-01.01-12: a company comes into existence only when its registration
+     * is approved, with a generated code, waiting for activation.
+     */
+    public static Company establish(String companyCode, CompanyRegistration registration) {
+        CompanyDetails details = registration.getDetails();
+        Company company = new Company(companyCode, details.legalName(), details.tradingName(),
+                details.registrationNumber(), details.contactEmail(), details.contactPhone());
+        company.registrationId = registration.getId();
+        company.operationalStatus = CompanyOperationalStatus.PENDING_ACTIVATION;
+        return company;
     }
 
     public Company(
@@ -164,5 +187,13 @@ public class Company implements Persistable<UUID> {
 
     public long getVersion() {
         return version;
+    }
+
+    public UUID getRegistrationId() {
+        return registrationId;
+    }
+
+    public CompanyOperationalStatus getOperationalStatus() {
+        return operationalStatus;
     }
 }

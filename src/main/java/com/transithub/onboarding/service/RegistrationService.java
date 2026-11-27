@@ -28,12 +28,14 @@ import com.transithub.onboarding.domain.RegistrationChannel;
 import com.transithub.onboarding.domain.RegistrationHistory;
 import com.transithub.onboarding.domain.Representative;
 import com.transithub.onboarding.domain.RepresentativeDetails;
+import com.transithub.onboarding.domain.SubmittedVersion;
 import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.RegistrationAlreadyExistsException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
 import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.repository.CompanyRegistrationRepository;
 import com.transithub.onboarding.repository.RegistrationHistoryRepository;
+import com.transithub.onboarding.repository.RegistrationSubmissionRepository;
 import com.transithub.shared.audit.AuditRecorder;
 import com.transithub.shared.id.UuidV7;
 import com.transithub.shared.security.CurrentActor;
@@ -65,6 +67,7 @@ public class RegistrationService {
 
     private final CompanyRegistrationRepository registrations;
     private final RegistrationHistoryRepository history;
+    private final RegistrationSubmissionRepository submissions;
     private final Authorization authorization;
     private final CurrentActor currentActor;
     private final AuditRecorder audit;
@@ -73,10 +76,12 @@ public class RegistrationService {
 
     public RegistrationService(CompanyRegistrationRepository registrations,
                                RegistrationHistoryRepository history,
+                               RegistrationSubmissionRepository submissions,
                                Authorization authorization, CurrentActor currentActor,
                                AuditRecorder audit, FileStorage storage, Clock clock) {
         this.registrations = registrations;
         this.history = history;
+        this.submissions = submissions;
         this.authorization = authorization;
         this.currentActor = currentActor;
         this.audit = audit;
@@ -165,6 +170,51 @@ public class RegistrationService {
                 Map.of("representativeId", representativeId.toString()));
     }
 
+    /** The result of a submission: the locked registration and any possible duplicates. */
+    public record Submitted(CompanyRegistration registration, int submissionNo,
+                            List<RegistrationSubmissionRepository.DuplicateFlag> possibleDuplicates) {
+    }
+
+    /**
+     * UC-01.01-06: submit a complete draft (AC-R1-SUB-01…03). Stores exactly
+     * what was submitted, flags possible duplicates for the verifier and
+     * locks the draft.
+     */
+    public Submitted submit(UUID id, long expectedVersion) {
+        authorization.require(Permission.REGISTRATION_SUBMIT);
+        CompanyRegistration registration = editable(id, expectedVersion);
+        String actor = currentActor.id();
+        Instant now = clock.instant();
+
+        SubmittedVersion submitted = registration.submit(actor, now);
+        CompanyRegistration saved = saveCommand(registration, "registration.submitted",
+                Map.of("contentRevision", String.valueOf(submitted.contentRevision())));
+
+        int number = submissions.save(id, submitted, actor, now);
+        List<RegistrationSubmissionRepository.DuplicateFlag> duplicates =
+                submissions.flagDuplicates(id, saved.getDetails(), now);
+        if (!duplicates.isEmpty()) {
+            audit.record("registration.duplicates-flagged", "CompanyRegistration", id, null, null,
+                    Map.of("count", duplicates.size(),
+                            "matches", duplicates.stream().map(RegistrationSubmissionRepository.DuplicateFlag::matchedReference).toList()));
+        }
+        return new Submitted(saved, number, duplicates);
+    }
+
+    @Transactional(readOnly = true)
+    public List<RegistrationSubmissionRepository.Submission> submissions(UUID id) {
+        authorization.require(Permission.REGISTRATION_VIEW);
+        visible(id);
+        return submissions.submissions(id);
+    }
+
+    @Transactional(readOnly = true)
+    public List<RegistrationSubmissionRepository.DuplicateFlag> duplicateFlags(UUID id) {
+        authorization.require(Permission.REGISTRATION_VIEW);
+        visible(id);
+        return submissions.duplicateFlags(id);
+    }
+
     /** Attach a document; the file is checked, encrypted and stored (AC-R1-CAP-06). */
     public CompanyRegistration attachEvidence(UUID id, long expectedVersion, EvidenceType type,
                                               @Nullable String originalFileName, byte[] content) {
@@ -239,7 +289,7 @@ public class RegistrationService {
     }
 
     /** Checks size and real type (from the bytes, not the name). */
-    private static FileType check(byte[] content, long maxBytes, FileType... allowed) {
+    static FileType check(byte[] content, long maxBytes, FileType... allowed) {
         if (content.length == 0) {
             throw new UploadRejectedException(UploadRejectedException.Reason.EMPTY, "The file is empty.");
         }
@@ -265,7 +315,7 @@ public class RegistrationService {
         return name.length() > 150 ? name.substring(name.length() - 150) : name;
     }
 
-    private static String sha256(byte[] content) {
+    static String sha256(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
         } catch (NoSuchAlgorithmException e) {
@@ -275,21 +325,31 @@ public class RegistrationService {
 
     /**
      * A registration the caller may see: with {@code registration.view-all}
-     * any; otherwise only those they captured. Anything else is "not found".
+     * any; otherwise those they captured or are assigned to verify, and,
+     * for reviewers and approvers, those at the decision stage.
+     * Anything else is "not found".
      */
-    private CompanyRegistration visible(UUID id) {
+    CompanyRegistration visible(UUID id) {
         CompanyRegistration registration = registrations.findAggregateById(id)
                 .orElseThrow(() -> new RegistrationNotFoundException("Registration", id));
 
-        boolean mine = registration.getCapturedBy().equals(currentActor.id());
-        if (!mine && !authorization.has(Permission.REGISTRATION_VIEW_ALL)) {
+        String actor = currentActor.id();
+        boolean mine = registration.getCapturedBy().equals(actor) || actor.equals(registration.getAssignedVerifier());
+        // Reviewers and approvers work from the recommendation stage onwards.
+        boolean decisionStage = java.util.EnumSet.of(com.transithub.onboarding.domain.RegistrationStatus.RECOMMENDED,
+                        com.transithub.onboarding.domain.RegistrationStatus.APPROVED,
+                        com.transithub.onboarding.domain.RegistrationStatus.REJECTED).contains(registration.getStatus())
+                && (authorization.has(Permission.REGISTRATION_REVIEW_RECOMMENDATION)
+                    || authorization.has(Permission.REGISTRATION_APPROVE)
+                    || authorization.has(Permission.REGISTRATION_REJECT));
+        if (!mine && !decisionStage && !authorization.has(Permission.REGISTRATION_VIEW_ALL)) {
             throw new RegistrationNotFoundException("Registration", id);
         }
         return registration;
     }
 
     /** Visible, and the client's copy is current (ADR-0007). */
-    private CompanyRegistration editable(UUID id, long expectedVersion) {
+    CompanyRegistration editable(UUID id, long expectedVersion) {
         CompanyRegistration registration = visible(id);
         if (registration.getVersion() != expectedVersion) {
             throw new ObjectOptimisticLockingFailureException(CompanyRegistration.class, id);
@@ -297,7 +357,7 @@ public class RegistrationService {
         return registration;
     }
 
-    private CompanyRegistration saveCommand(CompanyRegistration registration, String action,
+    CompanyRegistration saveCommand(CompanyRegistration registration, String action,
                                             @Nullable Map<String, String> extra) {
         List<RegistrationHistory.FieldChange> changes = registration.pullFieldChanges();
         CompanyRegistration saved = registrations.saveAndFlush(registration);

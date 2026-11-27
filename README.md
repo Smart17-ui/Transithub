@@ -128,6 +128,8 @@ Types: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`, `ci`. The scope is th
 
 **Before pushing:** run `.\mvnw verify`. If CI goes red, fixing it comes before any other work (ADR-0012).
 
+**Test data is never deleted** (the application has no delete rights), so it builds up in `transithub_test` across runs. Every test must create its own **unique** data: codes, registration numbers *and names*. Otherwise duplicate detection or uniqueness rules will (correctly) react to leftovers from earlier runs.
+
 **Tests are named after what they prove:** the acceptance criterion (`AC_R1_SYN_02_…`) or business rule (`BR_ONB_046_…`) where one applies.
 
 **Decisions:** any significant technical decision gets a short ADR in `docs/adr/`. Accepted ADRs are never edited, only superseded by a new one.
