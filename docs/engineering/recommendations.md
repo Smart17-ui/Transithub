@@ -545,5 +545,6 @@ Decisions are recorded as they are made, most recent last. Each one updates the 
 | 26 Nov 2026 | Sync conflict resolver | **Registration Supervisor** who made neither edit | Release 1 spec |
 | 26 Nov 2026 | Appeal window | **30 calendar days**, a platform setting | Release 1 spec |
 | 26 Nov 2026 | Changes after submission | **Correct drafts freely (history kept); after submission only through information requests; withdraw any time before a decision** | Release 1 spec |
+| 26 Nov 2026 | Frontend core stack | **React + TypeScript + Vite** (confirmed); installable offline app via a Vite PWA plugin | ADR-0009; R-25 (supporting libraries still to decide) |
 
 **All P1 recommendations are now decided.** P2/P3 items are decided when the relevant work starts.

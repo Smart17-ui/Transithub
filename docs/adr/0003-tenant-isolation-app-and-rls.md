@@ -15,3 +15,10 @@ Strict tenant isolation is a core approved principle. One missed `WHERE company_
 
 ## Consequences
 Two independent layers: a code bug alone cannot leak data. RLS adds some complexity to migrations and tests, which is accepted.
+
+## Implementation notes (27 November 2026, Release 1 step 1b)
+- The runtime role is `transithub_runtime`, created once by `scripts/db/create-runtime-role.sql`. Flyway migrates as the owner `transithub_app`, while the application connects as `transithub_runtime`, which owns nothing, so row-level security always applies.
+- The scope is written as two settings, `app.scope` (`platform` / `company` / empty) and `app.company_id`, by `TenantAwareDataSource` **on every connection checkout**, rather than with `SET LOCAL` per transaction. Every checkout overwrites both values, so a pooled connection never keeps a previous request's scope. The same mechanism also covers non-transactional JDBC calls.
+- No scope means no tenant rows (fail closed).
+- `TenantIsolationSchemaTest` fails the build if a table lacks row-level security, if the runtime role owns a table or can bypass RLS, or if the audit trail becomes changeable.
+- **Temporary:** until authentication (step 2), every HTTP request is treated as platform scope (`PlatformScopeUntilAuthentication`). The database layer is fully enforced and tested now; the HTTP layer starts distinguishing callers in step 2.

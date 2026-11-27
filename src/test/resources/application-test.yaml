@@ -1,11 +1,15 @@
 spring:
   datasource:
+    # Same split as production: tests run as the non-owner runtime role, so
+    # row-level security is exercised for real (ADR-0003).
     url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/transithub_test}
-    username: ${DB_USERNAME:transithub_app}
-    password: ${DB_PASSWORD}
+    username: ${DB_RUNTIME_USERNAME:transithub_runtime}
+    password: ${DB_RUNTIME_PASSWORD}
 
   flyway:
     enabled: true
+    user: ${DB_MIGRATION_USERNAME:transithub_app}
+    password: ${DB_PASSWORD}
     locations: classpath:db/migration
 
   jpa:
