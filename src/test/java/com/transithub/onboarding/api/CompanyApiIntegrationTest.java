@@ -2,16 +2,20 @@ package com.transithub.onboarding.api;
 
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.transithub.identity.Role;
+import com.transithub.identity.TestUsers;
 import com.transithub.onboarding.repository.CompanyRepository;
 import com.transithub.shared.tenancy.PlatformScopeExtension;
 
@@ -43,6 +47,16 @@ class CompanyApiIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private JdbcClient jdbc;
+
+    private TestUsers.TestUser admin;
+
+    @BeforeEach
+    void signInAsPlatformAdministrator() {
+        admin = new TestUsers(jdbc).platform(Role.PLATFORM_ADMINISTRATOR);
+    }
+
+    @Autowired
     private CompanyRepository companyRepository;
 
     @Test
@@ -50,6 +64,7 @@ class CompanyApiIntegrationTest {
         String code = uniqueCode("TH-T-");
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -76,6 +91,7 @@ class CompanyApiIntegrationTest {
         String code = uniqueCode("TH-T-");
 
         MvcResult creationResult = mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"companyCode": "%s", "legalName": "TransitHub Retrieval Test"}
@@ -87,7 +103,7 @@ class CompanyApiIntegrationTest {
         String location = creationResult.getResponse().getHeader("Location");
         String companyId = location.substring(location.lastIndexOf('/') + 1);
 
-        mockMvc.perform(get("/api/v1/companies/" + companyId))
+        mockMvc.perform(get("/api/v1/companies/" + companyId).with(admin.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(companyId))
                 .andExpect(jsonPath("$.companyCode").value(code))
@@ -101,11 +117,13 @@ class CompanyApiIntegrationTest {
                 """.formatted(uniqueCode("TH-D-"));
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isConflict())
@@ -116,6 +134,7 @@ class CompanyApiIntegrationTest {
     @Test
     void shouldRejectInvalidCompanyRequest() throws Exception {
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"companyCode": "", "legalName": "", "contactEmail": "not-an-email"}
@@ -130,7 +149,7 @@ class CompanyApiIntegrationTest {
 
     @Test
     void shouldReturnNotFoundForNonexistentCompany() throws Exception {
-        mockMvc.perform(get("/api/v1/companies/" + UUID.randomUUID()))
+        mockMvc.perform(get("/api/v1/companies/" + UUID.randomUUID()).with(admin.token()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.title").value("Resource not found"))
                 .andExpect(jsonPath("$.status").value(404))
@@ -139,7 +158,7 @@ class CompanyApiIntegrationTest {
 
     @Test
     void shouldReturnProblemDetailForMalformedCompanyId() throws Exception {
-        mockMvc.perform(get("/api/v1/companies/not-a-uuid"))
+        mockMvc.perform(get("/api/v1/companies/not-a-uuid").with(admin.token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.title").exists())
@@ -151,6 +170,7 @@ class CompanyApiIntegrationTest {
         String code = uniqueCode("TH-M-");
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

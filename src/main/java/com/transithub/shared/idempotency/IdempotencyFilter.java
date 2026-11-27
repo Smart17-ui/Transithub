@@ -8,22 +8,20 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 
+import com.transithub.shared.security.CurrentActor;
 import com.transithub.shared.web.ProblemCodes;
+import com.transithub.shared.web.ProblemResponseWriter;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
@@ -32,7 +30,6 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Makes requests carrying an {@code Idempotency-Key} header safe to retry
@@ -48,12 +45,12 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>5xx or an exception: the claim is released so the client can retry.</li>
  * </ul>
  *
- * <p>Keys are scoped to the HTTP method and path. When authentication is
- * added (step 2) the scope will also include the caller, so two users can
- * never collide on a key.
+ * <p>Keys are scoped to the caller, the HTTP method and the path, so two
+ * users can never collide on a key or see each other's stored responses.
+ * Runs after Spring Security (order -100) so the caller is known.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@Order(-80)
 public class IdempotencyFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "Idempotency-Key";
@@ -63,11 +60,14 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private static final Pattern VALID_KEY = Pattern.compile("[\\x21-\\x7E]{1,255}");
 
     private final IdempotencyStore store;
-    private final JsonMapper json;
+    private final ProblemResponseWriter problems;
+    private final CurrentActor currentActor;
 
-    public IdempotencyFilter(IdempotencyStore store, JsonMapper json) {
+    public IdempotencyFilter(IdempotencyStore store, ProblemResponseWriter problems,
+                             CurrentActor currentActor) {
         this.store = store;
-        this.json = json;
+        this.problems = problems;
+        this.currentActor = currentActor;
     }
 
     @Override
@@ -90,7 +90,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
 
         byte[] body = request.getInputStream().readAllBytes();
-        String scope = request.getMethod() + " " + request.getRequestURI();
+        String scope = currentActor.id() + " " + request.getMethod() + " " + request.getRequestURI();
         String hash = sha256(body);
 
         if (!store.claim(scope, key, hash)) {
@@ -163,17 +163,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private void writeProblem(
             HttpServletResponse response, HttpStatus status,
             String title, String detail, String code) throws IOException {
-
-        Map<String, Object> problem = new LinkedHashMap<>();
-        problem.put("type", "about:blank");
-        problem.put("title", title);
-        problem.put("status", status.value());
-        problem.put("detail", detail);
-        problem.put(ProblemCodes.PROPERTY, code);
-
-        response.setStatus(status.value());
-        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        response.getOutputStream().write(json.writeValueAsBytes(problem));
+        problems.write(response, status, title, detail, code);
     }
 
     private static String sha256(byte[] body) {

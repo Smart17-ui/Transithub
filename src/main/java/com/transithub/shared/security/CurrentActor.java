@@ -1,14 +1,14 @@
 package com.transithub.shared.security;
 
 /**
- * Who is performing the current action, for audit and separation-of-duties
- * checks.
- *
- * <p>Until authentication is added (Release 1, step 2: ADR-0004), the only
- * implementation is {@link UnauthenticatedActor}. Step 2 replaces it with
- * one that reads the signed-in user from the security context.
+ * Who is performing the current action, for audit events and idempotency
+ * scoping. Implemented by the identity module from the signed-in user
+ * (ADR-0004); the shared kernel only depends on this interface.
  */
 public interface CurrentActor {
+
+    /** The actor for work no user started: scheduled jobs, start-up tasks. */
+    String SYSTEM = "system";
 
     /** Stable identifier of the acting user or system process. */
     String id();

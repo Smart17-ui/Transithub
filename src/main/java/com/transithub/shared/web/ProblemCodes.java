@@ -21,6 +21,8 @@ public final class ProblemCodes {
     public static final String VALIDATION_FAILED = "validation-failed";
     public static final String INVALID_REQUEST_BODY = "invalid-request-body";
     public static final String NOT_FOUND = "not-found";
+    public static final String UNAUTHENTICATED = "unauthenticated";
+    public static final String ACCESS_DENIED = "access-denied";
     public static final String CONCURRENT_MODIFICATION = "concurrent-modification";
     public static final String IDEMPOTENCY_KEY_INVALID = "idempotency-key-invalid";
     public static final String IDEMPOTENCY_KEY_REUSED = "idempotency-key-reused";

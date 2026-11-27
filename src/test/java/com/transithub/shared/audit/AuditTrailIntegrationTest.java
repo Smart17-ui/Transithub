@@ -3,6 +3,7 @@ package com.transithub.shared.audit;
 import java.util.Map;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +17,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.IllegalTransactionStateException;
 
-import com.transithub.shared.security.UnauthenticatedActor;
+import com.transithub.identity.Role;
+import com.transithub.identity.TestUsers;
 import com.transithub.shared.web.CorrelationIdFilter;
 
 import com.transithub.shared.tenancy.PlatformScopeExtension;
@@ -40,6 +42,13 @@ class AuditTrailIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    private TestUsers.TestUser admin;
+
+    @BeforeEach
+    void signInAsPlatformAdministrator() {
+        admin = new TestUsers(jdbc).platform(Role.PLATFORM_ADMINISTRATOR);
+    }
+
     @Autowired
     private JdbcClient jdbc;
 
@@ -51,6 +60,7 @@ class AuditTrailIntegrationTest {
         String code = "TH-AUD-" + UUID.randomUUID().toString().substring(0, 8);
 
         MvcResult result = mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(CorrelationIdFilter.HEADER, "audit-test-correlation")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -76,7 +86,7 @@ class AuditTrailIntegrationTest {
         assertEquals("company.created", event.get("action"));
         assertEquals("Company", event.get("entity_type"));
         assertEquals(companyId, event.get("company_id"));
-        assertEquals(UnauthenticatedActor.ID, event.get("actor_id"));
+        assertEquals(admin.id().toString(), event.get("actor_id"));
         assertEquals("audit-test-correlation", event.get("correlation_id"));
         assertEquals(code, event.get("company_code"));
     }

@@ -19,6 +19,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -132,6 +133,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             ProblemCodes.ensureCode(problem);
         }
         return response;
+    }
+
+    /** A permission check in an application service failed (ADR-0004). */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAccessDenied(AccessDeniedException exception) {
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem(
+                HttpStatus.FORBIDDEN,
+                "Access denied",
+                "You do not have permission to do this.",
+                ProblemCodes.ACCESS_DENIED));
     }
 
     /** Two users changed the same record; the second write is refused (ADR-0007). */

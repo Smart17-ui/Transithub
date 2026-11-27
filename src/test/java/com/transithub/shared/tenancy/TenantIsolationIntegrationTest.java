@@ -11,6 +11,8 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
+import com.transithub.identity.Role;
+import com.transithub.identity.TestUsers;
 import com.transithub.onboarding.domain.Company;
 import com.transithub.onboarding.repository.CompanyRepository;
 import com.transithub.onboarding.service.CompanyService;
@@ -43,12 +45,17 @@ class TenantIsolationIntegrationTest {
     private UUID companyA;
     private UUID companyB;
 
+    private TestUsers.TestUser companyAdminOfA;
+
     @BeforeEach
     void createTwoCompaniesAsPlatformStaff() {
-        TenantContext.runAs(TenantScope.platform(), () -> {
+        TestUsers users = new TestUsers(jdbc);
+        TestUsers.TestUser platformAdmin = users.platform(Role.PLATFORM_ADMINISTRATOR);
+        platformAdmin.run(() -> {
             companyA = create("Company A").getId();
             companyB = create("Company B").getId();
         });
+        companyAdminOfA = users.inCompany(Role.COMPANY_ADMINISTRATOR, companyA);
     }
 
     @Test
@@ -92,8 +99,20 @@ class TenantIsolationIntegrationTest {
 
     @Test
     void AC_R1_X_01_companyUsersCannotCreateCompanies() {
+        // Layer 1, the application: no permission.
+        assertThrows(org.springframework.security.access.AccessDeniedException.class, () ->
+                companyAdminOfA.run(() -> create("Sneaky Company")));
+
+        // Layer 2, the database: even a direct insert in company scope is refused.
         assertThrows(DataAccessException.class, () ->
-                TenantContext.runAs(TenantScope.company(companyA), () -> create("Sneaky Company")));
+                TenantContext.runAs(TenantScope.company(companyA), () ->
+                        jdbc.sql("""
+                                INSERT INTO companies (id, company_code, legal_name, created_at, updated_at)
+                                VALUES (:id, :code, 'Sneaky', now(), now())
+                                """)
+                                .param("id", UUID.randomUUID())
+                                .param("code", "TH-X-" + UUID.randomUUID().toString().substring(0, 8))
+                                .update()));
     }
 
     @Test

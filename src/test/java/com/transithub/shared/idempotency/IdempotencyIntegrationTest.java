@@ -2,6 +2,7 @@ package com.transithub.shared.idempotency;
 
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.transithub.identity.Role;
+import com.transithub.identity.TestUsers;
 import com.transithub.shared.tenancy.PlatformScopeExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,6 +37,13 @@ class IdempotencyIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    private TestUsers.TestUser admin;
+
+    @BeforeEach
+    void signInAsPlatformAdministrator() {
+        admin = new TestUsers(jdbc).platform(Role.PLATFORM_ADMINISTRATOR);
+    }
+
     @Autowired
     private JdbcClient jdbc;
 
@@ -44,6 +54,7 @@ class IdempotencyIntegrationTest {
         String body = companyJson(code, "Idempotent Company");
 
         MvcResult first = mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -52,6 +63,7 @@ class IdempotencyIntegrationTest {
                 .andReturn();
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -68,6 +80,7 @@ class IdempotencyIntegrationTest {
         String key = UUID.randomUUID().toString();
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(companyJson(uniqueCode(), "First Body")))
@@ -75,6 +88,7 @@ class IdempotencyIntegrationTest {
 
         String otherCode = uniqueCode();
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(companyJson(otherCode, "Second Body")))
@@ -92,6 +106,7 @@ class IdempotencyIntegrationTest {
                 """;
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalid))
@@ -99,6 +114,7 @@ class IdempotencyIntegrationTest {
                 .andExpect(jsonPath("$.code").value("validation-failed"));
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalid))
@@ -110,6 +126,7 @@ class IdempotencyIntegrationTest {
     @Test
     void invalidKeyIsRejected() throws Exception {
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .header(IdempotencyFilter.HEADER, "has spaces in it")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(companyJson(uniqueCode(), "Bad Key")))
@@ -122,6 +139,7 @@ class IdempotencyIntegrationTest {
         String code = uniqueCode();
 
         mockMvc.perform(post("/api/v1/companies")
+                        .with(admin.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(companyJson(code, "No Key Company")))
                 .andExpect(status().isCreated())
