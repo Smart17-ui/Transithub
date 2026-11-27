@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          # Throwaway database that exists only for this CI job.
+          POSTGRES_DB: transithub_test
+          POSTGRES_USER: transithub_app
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U transithub_app -d transithub_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DB_URL: jdbc:postgresql://localhost:5432/transithub_test
+      # Migrations run as the schema owner; the application as the
+      # non-owner runtime role, so row-level security applies (ADR-0003).
+      DB_MIGRATION_USERNAME: transithub_app
+      DB_PASSWORD: ci-only-password
+      DB_RUNTIME_USERNAME: transithub_runtime
+      DB_RUNTIME_PASSWORD: ci-only-runtime-password
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Same one-time setup as scripts/db/create-runtime-role.sql.
+      - name: Create runtime database role
+        env:
+          PGPASSWORD: ci-only-password
+        run: >
+          psql -h localhost -U transithub_app -d transithub_test -v ON_ERROR_STOP=1 -c
+          "CREATE ROLE transithub_runtime LOGIN PASSWORD 'ci-only-runtime-password'
+          NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;"
+
+      # mvnw is committed without the executable bit (created on Windows).
+      - run: chmod +x mvnw
+
+      - name: Build and test
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/

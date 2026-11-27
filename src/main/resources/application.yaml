@@ -19,3 +19,31 @@ spring:
 
 server:
   port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health        # nothing else is exposed over HTTP
+  endpoint:
+    health:
+      show-details: never      # no internal details to anonymous callers
+
+transithub:
+  security:
+    oidc:
+      # Keycloak staff realm, self-hosted in Zambia (ADR-0017), e.g.
+      # https://id.transithub.co.zm/realms/staff  (local: http://localhost:8180/realms/staff)
+      issuer: ${OIDC_ISSUER:http://localhost:8180/realms/staff}
+      # Comma-separated client ids allowed to call the API.
+      client-ids: ${OIDC_CLIENT_IDS:transithub-backoffice}
+      # Optional; defaults to <issuer>/protocol/openid-connect/certs.
+      jwk-set-uri: ${OIDC_JWK_SET_URI:}
+
+  bootstrap:
+    # One-time creation of the first platform administrator. Set the subject
+    # to that person's Keycloak user ID; once they exist, this does nothing.
+    platform-admin:
+      subject: ${TRANSITHUB_BOOTSTRAP_ADMIN_SUBJECT:}
+      email: ${TRANSITHUB_BOOTSTRAP_ADMIN_EMAIL:}
+      display-name: ${TRANSITHUB_BOOTSTRAP_ADMIN_NAME:}
