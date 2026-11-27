@@ -66,6 +66,14 @@ class RegistrationSyncProcessor {
         Instant now = clock.instant();
         String hash = hash(item.snapshot());
 
+        java.util.Set<UUID> sentRepresentatives = item.snapshot().representatives().stream()
+                .map(com.transithub.onboarding.domain.DraftSnapshot.RepresentativeSnapshot::id)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!sync.representativesOwnedElsewhere(item.id(), sentRepresentatives).isEmpty()) {
+            // Never let a device's ids touch another registration's people.
+            return quarantine(deviceId, item, hash, "A representative id belongs to another registration.", now);
+        }
+
         Optional<CompanyRegistration> found = registrations.findAggregateById(item.id());
         if (found.isEmpty()) {
             if (!authorization.has(Permission.REGISTRATION_CAPTURE)) {
@@ -76,20 +84,34 @@ class RegistrationSyncProcessor {
 
         CompanyRegistration registration = found.get();
 
-        // AC-R1-SYN-02: the same content again (a retry after a lost response) changes nothing.
-        Optional<RegistrationSyncRepository.AppliedSync> last = sync.lastApplied(item.id(), deviceId);
-        if (last.isPresent() && last.get().payloadHash().equals(hash)) {
-            sync.record(item.id(), deviceId, actor, hash, item.baseVersion(), Outcome.ALREADY_APPLIED,
-                    registration.getVersion(), null, null, now);
-            return new SyncResult(item.id(), Outcome.ALREADY_APPLIED, registration.getReference(),
-                    registration.getVersion(), null, null);
-        }
-
+        // Visibility first: nothing about someone else's registration is revealed.
         boolean visible = registration.getCapturedBy().equals(actor)
                 || authorization.has(Permission.REGISTRATION_VIEW_ALL);
         if (!visible) {
             return quarantine(deviceId, item, hash, "The registration belongs to another officer.", now);
         }
+
+        // AC-R1-SYN-02: the same content again from this device and user (a retry
+        // after a lost response) changes nothing and gets the same answer.
+        Optional<RegistrationSyncRepository.LastSync> lastRecord = sync.lastRecord(item.id(), deviceId);
+        if (lastRecord.isPresent() && lastRecord.get().payloadHash().equals(hash)
+                && lastRecord.get().userId().equals(actor)) {
+            Outcome previous = lastRecord.get().outcome();
+            UUID conflictId = lastRecord.get().conflictId();
+            if (previous == Outcome.CONFLICT && conflictId != null && conflictId.equals(registration.getOpenConflictId())) {
+                sync.record(item.id(), deviceId, actor, hash, item.baseVersion(), Outcome.CONFLICT,
+                        registration.getVersion(), conflictId, null, now);
+                return new SyncResult(item.id(), Outcome.CONFLICT, registration.getReference(),
+                        registration.getVersion(), conflictId, "This edit is already waiting for a supervisor.");
+            }
+            if (previous == Outcome.CREATED || previous == Outcome.UPDATED || previous == Outcome.ALREADY_APPLIED) {
+                sync.record(item.id(), deviceId, actor, hash, item.baseVersion(), Outcome.ALREADY_APPLIED,
+                        registration.getVersion(), null, null, now);
+                return new SyncResult(item.id(), Outcome.ALREADY_APPLIED, registration.getReference(),
+                        registration.getVersion(), null, null);
+            }
+        }
+        Optional<RegistrationSyncRepository.AppliedSync> last = sync.lastApplied(item.id(), deviceId);
         if (!authorization.has(Permission.REGISTRATION_EDIT_DRAFT)) {
             return quarantine(deviceId, item, hash, "The user may not edit registration drafts.", now);
         }

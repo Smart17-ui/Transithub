@@ -107,7 +107,7 @@
 - Read-only audit trail endpoint for `audit.view` (UC-X-AUD-01).
 
 ### #13 Notifications (email and SMS), Zambian providers
-- **Security note:** the invitation's raw token sits in `notification_outbox.parameters` until sent. The sender must clear it (or the outbox purge old sent rows) once delivered.
+- The invitation token is stored **sealed** (`sealedToken`, encrypted with `SecretSealer`); the sender unseals it at delivery and should purge sent rows after a retention period.
 **Labels:** `backend`, `infra`
 - A notification port with email and SMS adapters, choosing providers that satisfy the data-protection answers (#3).
 - Used for invitations, information requests and decisions. Development uses a log-only adapter.
@@ -125,6 +125,7 @@
 **Labels:** `quality`
 - Run the demo script in the Release 1 spec §1 end to end; fix and sign off.
 
-### #17 Independent code review before each merge
+### #17 Independent code review before each merge — **first review DONE (27 Nov 2026)**
+- 10 findings (6 important, 4 minor), all confirmed and fixed, each with a regression test (`ReviewFindingsRegressionTest`, `RegistrationSyncServiceTest`). 183 tests.
 **Labels:** `quality`
 - Before merging each step, run an independent review pass (for example `/code-review`) and fix confirmed findings.

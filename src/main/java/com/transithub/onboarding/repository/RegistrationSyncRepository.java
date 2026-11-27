@@ -91,6 +91,40 @@ public class RegistrationSyncRepository {
     public record AppliedSync(String payloadHash, long serverVersionAfter) {
     }
 
+    /** The latest sync record of this device for the registration, whatever its outcome. */
+    public record LastSync(String payloadHash, Outcome outcome, String userId, @Nullable UUID conflictId) {
+    }
+
+    public Optional<LastSync> lastRecord(UUID registrationId, String deviceId) {
+        return jdbc.sql("""
+                SELECT payload_hash, outcome, user_id, conflict_id
+                  FROM registration_sync_record
+                 WHERE registration_id = :id AND device_id = :device
+                 ORDER BY received_at DESC, id DESC
+                 LIMIT 1
+                """)
+                .param("id", registrationId)
+                .param("device", deviceId)
+                .query((rs, n) -> new LastSync(rs.getString("payload_hash"), Outcome.valueOf(rs.getString("outcome")),
+                        rs.getString("user_id"), rs.getObject("conflict_id", UUID.class)))
+                .optional();
+    }
+
+    /** Representative ids that already belong to a <em>different</em> registration. */
+    public List<UUID> representativesOwnedElsewhere(UUID registrationId, java.util.Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("""
+                SELECT id FROM registration_representative
+                 WHERE id IN (:ids) AND registration_id <> :registrationId
+                """)
+                .param("ids", ids)
+                .param("registrationId", registrationId)
+                .query(UUID.class)
+                .list();
+    }
+
     public UUID saveConflict(UUID registrationId, String deviceId, String deviceUser, String serverEditor,
                              @Nullable Long baseVersion, long serverVersion, DraftSnapshot deviceSnapshot,
                              DraftSnapshot serverSnapshot, Instant now) {

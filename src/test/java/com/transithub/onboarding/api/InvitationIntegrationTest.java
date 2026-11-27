@@ -44,6 +44,9 @@ class InvitationIntegrationTest {
     @Autowired
     private JdbcClient jdbc;
 
+    @Autowired
+    private com.transithub.shared.storage.SecretSealer sealer;
+
     private TestUsers users;
     private UUID companyId;
     private TestUsers.TestUser mrBanda;
@@ -64,6 +67,13 @@ class InvitationIntegrationTest {
 
         String token = latestToken();
         assertTrue(token.length() >= 40, "a long random token");
+        // The outbox holds it only encrypted.
+        assertEquals(0, jdbc.sql("""
+                        SELECT COUNT(*) FROM notification_outbox
+                         WHERE parameters ->> 'companyCode' = (SELECT company_code FROM companies WHERE id = :id)
+                           AND (jsonb_exists(parameters, 'token') OR parameters::text LIKE :token)
+                        """)
+                .param("id", companyId).param("token", "%" + token + "%").query(Integer.class).single());
         // Only the token's fingerprint is stored, never the token itself.
         assertEquals(0, jdbc.sql("SELECT COUNT(*) FROM company_invitation WHERE token_hash = :token")
                 .param("token", token).query(Integer.class).single());
@@ -157,13 +167,13 @@ class InvitationIntegrationTest {
                 .content("{\"token\": \"%s\"}".formatted(token)));
     }
 
-    /** The link as it would arrive by SMS or email: from the notification outbox. */
+    /** The link as the sender would deliver it: decrypted from the notification outbox. */
     private String latestToken() {
-        return jdbc.sql("""
-                SELECT parameters ->> 'token' FROM notification_outbox
+        return sealer.unseal(jdbc.sql("""
+                SELECT parameters ->> 'sealedToken' FROM notification_outbox
                  WHERE template = 'company.administrator-invitation'
                    AND parameters ->> 'companyCode' = (SELECT company_code FROM companies WHERE id = :id)
                  ORDER BY created_at DESC, id DESC LIMIT 1
-                """).param("id", companyId).query(String.class).single();
+                """).param("id", companyId).query(String.class).single());
     }
 }

@@ -164,6 +164,7 @@ public class VerificationService {
         verification.openInformationRequest(id, requestId)
                 .orElseThrow(() -> new RegistrationNotFoundException("Open information request", requestId));
 
+        registration.checkCanAttachRequestedEvidence();
         FileType fileType = RegistrationService.check(content, RegistrationService.MAX_EVIDENCE_BYTES,
                 FileType.PDF, FileType.JPEG, FileType.PNG);
         String storageKey = storage.store(content);

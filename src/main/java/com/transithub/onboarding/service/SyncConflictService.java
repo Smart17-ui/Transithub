@@ -37,6 +37,7 @@ public class SyncConflictService {
     private final RegistrationHistoryRepository history;
     private final RegistrationSyncRepository sync;
     private final RegistrationService registrationService;
+    private final com.transithub.onboarding.repository.VerificationRepository verification;
     private final Authorization authorization;
     private final CurrentActor currentActor;
     private final AuditRecorder audit;
@@ -44,11 +45,13 @@ public class SyncConflictService {
 
     SyncConflictService(CompanyRegistrationRepository registrations, RegistrationHistoryRepository history,
                         RegistrationSyncRepository sync, RegistrationService registrationService,
+                        com.transithub.onboarding.repository.VerificationRepository verification,
                         Authorization authorization, CurrentActor currentActor, AuditRecorder audit, Clock clock) {
         this.registrations = registrations;
         this.history = history;
         this.sync = sync;
         this.registrationService = registrationService;
+        this.verification = verification;
         this.authorization = authorization;
         this.currentActor = currentActor;
         this.audit = audit;
@@ -76,7 +79,11 @@ public class SyncConflictService {
                 .findFirst()
                 .orElseThrow(() -> new RegistrationNotFoundException("Open sync conflict", conflictId));
 
-        if (actor.equals(conflict.deviceUser()) || actor.equals(conflict.serverEditor())) {
+        // Everyone who edited the registration, not only the last editor.
+        java.util.Set<String> involved = new java.util.HashSet<>(verification.participants(registrationId));
+        involved.add(conflict.deviceUser());
+        involved.add(conflict.serverEditor());
+        if (involved.contains(actor)) {
             throw new SeparationOfDutiesException(
                     "A sync conflict must be resolved by someone who made neither of the conflicting edits.");
         }
@@ -94,6 +101,11 @@ public class SyncConflictService {
 
         CompanyRegistration registration = registrations.findAggregateById(registrationId)
                 .orElseThrow(() -> new RegistrationNotFoundException("Registration", registrationId));
+        if (chosen != null && !sync.representativesOwnedElsewhere(registrationId, chosen.representatives().stream()
+                .map(DraftSnapshot.RepresentativeSnapshot::id).toList()).isEmpty()) {
+            throw new com.transithub.onboarding.domain.exception.InvalidRegistrationInputException(
+                    "A representative id in this version belongs to another registration.");
+        }
         Instant now = clock.instant();
         registration.resolveSyncConflict(conflictId, chosen, actor, now);
 

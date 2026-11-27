@@ -33,14 +33,16 @@ import com.transithub.shared.audit.AuditRecorder;
 import com.transithub.shared.id.UuidV7;
 import com.transithub.shared.notification.NotificationOutbox;
 import com.transithub.shared.security.CurrentActor;
+import com.transithub.shared.storage.SecretSealer;
 import com.transithub.shared.tenancy.TenantContext;
 import com.transithub.shared.tenancy.TenantScope;
 
 /**
  * The first Company Administrator invitation (UC-01.01-16; AC-R1-EST-04…06).
  *
- * <p>The link carries a random 256-bit token; only its SHA-256 hash is
- * stored. The raw token leaves the system once, in the notification.
+ * <p>The link carries a random 256-bit token. The invitation keeps only its
+ * SHA-256 hash; the notification carries it encrypted ({@link SecretSealer}),
+ * for the sender to decrypt at delivery.
  */
 @Service
 @Transactional
@@ -59,13 +61,14 @@ public class InvitationService {
     private final CurrentActor currentActor;
     private final AuditRecorder audit;
     private final NotificationOutbox notifications;
+    private final SecretSealer sealer;
     private final Clock clock;
     private final Duration validity;
 
     InvitationService(InvitationRepository invitations, CompanyRepository companies,
                       CompanyRegistrationRepository registrations, UserProvisioning users,
                       Authorization authorization, CurrentActor currentActor, AuditRecorder audit,
-                      NotificationOutbox notifications, Clock clock,
+                      NotificationOutbox notifications, SecretSealer sealer, Clock clock,
                       @Value("${transithub.onboarding.invitation-validity-days:7}") int validityDays) {
         this.invitations = invitations;
         this.companies = companies;
@@ -75,6 +78,7 @@ public class InvitationService {
         this.currentActor = currentActor;
         this.audit = audit;
         this.notifications = notifications;
+        this.sealer = sealer;
         this.clock = clock;
         this.validity = Duration.ofDays(validityDays);
     }
@@ -168,7 +172,8 @@ public class InvitationService {
 
         notifications.enqueue("representative:" + primary.getId(), "company.administrator-invitation",
                 Map.of("companyCode", company.getCompanyCode(), "companyName", company.getLegalName(),
-                        "recipientName", primary.getFullName(), "token", token,
+                        // Encrypted: a database or backup reader must not be able to accept it.
+                        "recipientName", primary.getFullName(), "sealedToken", sealer.seal(token),
                         "expiresAt", now.plus(validity).toString()),
                 null);
         audit.record(reissueOf == null ? "company.invitation-issued" : "company.invitation-reissued",

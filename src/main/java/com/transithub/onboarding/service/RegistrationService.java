@@ -221,6 +221,7 @@ public class RegistrationService {
         authorization.require(Permission.REGISTRATION_EDIT_DRAFT);
         CompanyRegistration registration = editable(id, expectedVersion);
 
+        registration.checkCanAttachEvidence();
         FileType fileType = check(content, MAX_EVIDENCE_BYTES, FileType.PDF, FileType.JPEG, FileType.PNG);
         String storageKey = storage.store(content);
         Evidence item = registration.attachEvidence(UuidV7.generate(), type,
@@ -267,6 +268,7 @@ public class RegistrationService {
         if (!Declaration.CURRENT.version().equals(declarationVersion)) {
             throw new DeclarationOutdatedException(declarationVersion, Declaration.CURRENT.version());
         }
+        registration.checkCanAcknowledge(representativeId);
         check(signaturePng, MAX_SIGNATURE_BYTES, FileType.PNG);
         String storageKey = storage.store(signaturePng);
 

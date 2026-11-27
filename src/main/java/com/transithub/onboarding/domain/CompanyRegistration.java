@@ -98,9 +98,14 @@ public class CompanyRegistration implements Persistable<UUID> {
     @Embedded
     private CompanyDetails details;
 
+    /**
+     * A Set, not a List: loaded together with evidence and acknowledgements
+     * in one query, a List (a Hibernate "bag") would repeat representatives
+     * once per joined row.
+     */
     @OneToMany(mappedBy = "registration", cascade = CascadeType.ALL)
     @OrderBy("position")
-    private final List<Representative> representatives = new ArrayList<>();
+    private final Set<Representative> representatives = new LinkedHashSet<>();
 
     @OneToMany(mappedBy = "registration", cascade = CascadeType.ALL)
     @OrderBy("uploadedAt")
@@ -182,7 +187,7 @@ public class CompanyRegistration implements Persistable<UUID> {
         RepresentativeDetails cleaned = requireName(input.normalised());
 
         if (cleaned.primaryContact()) {
-            activeRepresentatives().forEach(Representative::clearPrimaryContact);
+            activeRepresentatives().forEach(other -> clearPrimaryContact(other, actor, now));
         }
         int position = representatives.stream().mapToInt(Representative::getPosition).max().orElse(0) + 1;
         Representative representative = new Representative(representativeId, this, position, cleaned, now);
@@ -214,7 +219,7 @@ public class CompanyRegistration implements Persistable<UUID> {
         if (cleaned.primaryContact()) {
             activeRepresentatives().stream()
                     .filter(other -> !other.getId().equals(representativeId))
-                    .forEach(Representative::clearPrimaryContact);
+                    .forEach(other -> clearPrimaryContact(other, actor, now));
         }
         representative.apply(cleaned);
         touch(changed, actor, now);
@@ -587,7 +592,40 @@ public class CompanyRegistration implements Persistable<UUID> {
     }
 
     public List<Representative> activeRepresentatives() {
-        return representatives.stream().filter(Representative::isActive).toList();
+        return representatives.stream()
+                .filter(Representative::isActive)
+                .sorted(java.util.Comparator.comparingInt(Representative::getPosition))
+                .toList();
+    }
+
+    /** Fails before any file is stored if evidence cannot be attached now. */
+    public void checkCanAttachEvidence() {
+        requireEditable("attach evidence to");
+    }
+
+    /** Fails before the signature is stored if acknowledgement is not possible now. */
+    public void checkCanAcknowledge(UUID representativeId) {
+        requireEditable("acknowledge");
+        activeRepresentative(representativeId);
+    }
+
+    /** Fails before any file is stored if requested evidence cannot be supplied now. */
+    public void checkCanAttachRequestedEvidence() {
+        if (status != RegistrationStatus.AWAITING_INFORMATION) {
+            throw new InvalidRegistrationStateException("supply requested evidence for", status);
+        }
+    }
+
+    /** Ids of the representatives (active or removed) of this registration. */
+    public java.util.Set<UUID> representativeIds() {
+        return representatives.stream().map(Representative::getId).collect(java.util.stream.Collectors.toSet());
+    }
+
+    private void clearPrimaryContact(Representative other, String actor, Instant now) {
+        if (other.isPrimaryContact()) {
+            other.clearPrimaryContact();
+            recordChange("representative[" + other.getId() + "].primaryContact", "true", "false", true, actor, now);
+        }
     }
 
     private Representative activeRepresentative(UUID representativeId) {

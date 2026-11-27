@@ -53,6 +53,9 @@ class ReleaseOneDemoScriptTest {
     @Autowired
     private JdbcClient jdbc;
 
+    @Autowired
+    private com.transithub.shared.storage.SecretSealer sealer;
+
     @Test
     void kafueCoachesFromChipataToTheirFirstSignIn() throws Exception {
         TestUsers users = new TestUsers(jdbc);
@@ -162,10 +165,10 @@ class ReleaseOneDemoScriptTest {
         assertEquals("PENDING_ACTIVATION", JsonPath.read(approval, "$.company.operationalStatus"));
 
         TestUsers.TestUser mrBanda = TestUsers.unregistered();
-        String token = jdbc.sql("""
-                SELECT parameters ->> 'token' FROM notification_outbox
+        String token = sealer.unseal(jdbc.sql("""
+                SELECT parameters ->> 'sealedToken' FROM notification_outbox
                  WHERE template = 'company.administrator-invitation' AND parameters ->> 'companyCode' = :code
-                """).param("code", companyCode).query(String.class).single();
+                """).param("code", companyCode).query(String.class).single());
         mockMvc.perform(post("/api/v1/invitations/acceptance").with(mrBanda.token())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"token\": \"%s\"}".formatted(token)))
                 .andExpect(status().isOk());

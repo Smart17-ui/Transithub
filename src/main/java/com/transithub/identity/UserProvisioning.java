@@ -74,6 +74,20 @@ public class UserProvisioning {
         if (role.scopeType() != Role.ScopeType.COMPANY) {
             throw new IllegalArgumentException(role + " is not a company role");
         }
+        // An expired (but not revoked) assignment would block the new one through
+        // the unique index on active assignments: close it first.
+        jdbc.sql("""
+                UPDATE role_assignment
+                   SET revoked_at = now(), revoked_by = :grantedBy, revoke_reason = 'Expired; replaced by a new grant'
+                 WHERE user_id = :userId AND role_code = :role AND company_id = :companyId
+                   AND revoked_at IS NULL AND valid_until IS NOT NULL AND valid_until <= now()
+                """)
+                .param("grantedBy", grantedBy)
+                .param("userId", userId)
+                .param("role", role.name())
+                .param("companyId", companyId)
+                .update();
+
         // valid_from uses the database clock, which also decides validity
         // (app_principal_lookup), so the role works from the very next request.
         jdbc.sql("""

@@ -82,6 +82,19 @@ class CompanyRegistrationTest {
     }
 
     @Test
+    void losingPrimaryContactIsRecordedInTheHistory() {
+        CompanyRegistration registration = draft(CompanyDetails.empty());
+        Representative banda = registration.addRepresentative(UuidV7.generate(), representative("Mr Banda", true), JOSEPH, NOW);
+        registration.pullFieldChanges();
+
+        registration.addRepresentative(UuidV7.generate(), representative("Mrs Phiri", true), JOSEPH, NOW);
+
+        assertTrue(registration.pullFieldChanges().stream().anyMatch(change ->
+                change.field().equals("representative[" + banda.getId() + "].primaryContact")
+                        && "true".equals(change.oldValue()) && "false".equals(change.newValue())));
+    }
+
+    @Test
     void representativeChangesAreMaterial() {
         CompanyRegistration registration = draft(CompanyDetails.empty());
         Representative banda = registration.addRepresentative(UuidV7.generate(), representative("Mr Banda", true), JOSEPH, NOW);

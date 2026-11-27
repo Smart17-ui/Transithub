@@ -37,7 +37,8 @@ public class NotificationOutbox {
     /**
      * @param recipientUserId the TransitHub user to notify
      * @param template        message template, e.g. {@code registration.information-requested}
-     * @param parameters      values for the template; never secrets
+     * @param parameters      values for the template; secrets only sealed with
+     *                        {@link com.transithub.shared.storage.SecretSealer}
      * @param companyId       the tenant, or {@code null} for platform notifications
      */
     @Transactional(propagation = Propagation.MANDATORY)
