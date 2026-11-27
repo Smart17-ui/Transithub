@@ -53,7 +53,7 @@ jobs:
       DB_RUNTIME_PASSWORD: ci-only-runtime-password
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-java@v4
         with:
