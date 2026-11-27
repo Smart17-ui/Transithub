@@ -19,5 +19,5 @@ Accepted decisions, in order. Each ADR is short: context, decision, consequences
 | [0013](0013-hosting-and-operations.md) | Cloud hosting in the nearest region with managed PostgreSQL | R-32, R-33 |
 | [0014](0014-governance-mechanisms-shared-module.md) | Governance rules (BR-ONB-111–274) built once as shared mechanisms G1–G9 | R-19; analysis 04 |
 | [0015](0015-marketplace-public-read-model.md) | Marketplace search from a public, platform-level read model | R-40 |
-
-**Pending:** ADR-0016, the choice of managed identity provider (follows ADR-0004).
+| [0016](0016-identity-provider-aws-cognito.md) | ~~AWS Cognito (Cape Town); AWS as the cloud~~ (superseded by 0017) | ADR-0004, ADR-0013 |
+| [0017](0017-hosting-in-zambia-infratel-keycloak.md) | Host in Zambia at Infratel; self-hosted Keycloak for sign-in | Data Protection Act 2021 |

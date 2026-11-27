@@ -1,6 +1,6 @@
 # ADR-0013: Cloud hosting in the nearest region with managed PostgreSQL
 
-**Status:** Accepted (26 November 2026)
+**Status:** Accepted (26 November 2026). **Hosting location superseded by [ADR-0017](0017-hosting-in-zambia-infratel-keycloak.md):** Infratel Zambia, not a South African cloud region.
 **Source:** R-32, R-33 in [../engineering/recommendations.md](../engineering/recommendations.md)
 
 ## Context

@@ -546,5 +546,12 @@ Decisions are recorded as they are made, most recent last. Each one updates the 
 | 26 Nov 2026 | Appeal window | **30 calendar days**, a platform setting | Release 1 spec |
 | 26 Nov 2026 | Changes after submission | **Correct drafts freely (history kept); after submission only through information requests; withdraw any time before a decision** | Release 1 spec |
 | 26 Nov 2026 | Frontend core stack | **React + TypeScript + Vite** (confirmed); installable offline app via a Vite PWA plugin | ADR-0009; R-25 (supporting libraries still to decide) |
+| 27 Nov 2026 | Cloud provider | **AWS, af-south-1 (Cape Town)** | ADR-0016; ADR-0013 |
+| 27 Nov 2026 | Login service | **Amazon Cognito** in the same region (staff pool now, passenger pool at Release 3) | ADR-0016 |
+| 27 Nov 2026 | Staff MFA | **Mandatory authenticator app (TOTP)**; no SMS MFA | ADR-0016 |
+| 27 Nov 2026 | Session length | **30 minutes idle, 10 hours maximum** | ADR-0016 |
+| 27 Nov 2026 | Hosting (revised) | **Infratel Zambia**, free use offered; personal data stays in Zambia (Data Protection Act 2021). Replaces AWS Cape Town | ADR-0017 supersedes ADR-0016 and ADR-0013's location |
+| 27 Nov 2026 | Login service (revised) | **Keycloak, self-hosted on Infratel**. Replaces Cognito; MFA and session decisions unchanged | ADR-0017 |
+| 27 Nov 2026 | Legal confirmation | **Product owner to confirm with ODPC / lawyer** before go-live | ADR-0017; hosting and data-protection checklist |
 
 **All P1 recommendations are now decided.** P2/P3 items are decided when the relevant work starts.
