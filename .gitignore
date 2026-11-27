@@ -44,3 +44,16 @@ secrets/
 *.log
 .DS_Store
 Thumbs.db
+
+### Secrets and local settings (never commit) ###
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
+### Local tools ###
+keycloak-*/
+*.log
