@@ -18,6 +18,6 @@ public interface CompanyRegistrationRepository extends JpaRepository<CompanyRegi
      * Loads the whole aggregate in one query. Responses are built after the
      * transaction ends (open-in-view is off), so nothing may be left lazy.
      */
-    @EntityGraph(attributePaths = "representatives")
+    @EntityGraph(attributePaths = {"representatives", "evidence", "acknowledgements"})
     Optional<CompanyRegistration> findAggregateById(UUID id);
 }

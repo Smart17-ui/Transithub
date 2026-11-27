@@ -2,9 +2,12 @@ package com.transithub.onboarding.domain;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
@@ -32,8 +35,8 @@ import jakarta.persistence.Version;
  * A company's application to join TransitHub (BP-01.01). Exists before any
  * {@link Company}; the company is established only on approval.
  *
- * <p>The aggregate root: representatives (and, later, evidence and
- * acknowledgements) change only through its commands. Each command checks
+ * <p>The aggregate root: representatives, evidence and acknowledgements
+ * change only through its commands. Each command checks
  * that it is allowed in the current status (ADR-0006) and records its field
  * and status changes for the history tables.
  */
@@ -68,6 +71,14 @@ public class CompanyRegistration implements Persistable<UUID> {
     @OneToMany(mappedBy = "registration", cascade = CascadeType.ALL)
     @OrderBy("position")
     private final List<Representative> representatives = new ArrayList<>();
+
+    @OneToMany(mappedBy = "registration", cascade = CascadeType.ALL)
+    @OrderBy("uploadedAt")
+    private final Set<Evidence> evidence = new LinkedHashSet<>();
+
+    @OneToMany(mappedBy = "registration", cascade = CascadeType.ALL)
+    @OrderBy("recordedAt")
+    private final Set<Acknowledgement> acknowledgements = new LinkedHashSet<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -188,13 +199,87 @@ public class CompanyRegistration implements Persistable<UUID> {
         touch(true, now);
     }
 
+    /** Attach a document (UC-01.01-03). A material change: signatures must be given again. */
+    public Evidence attachEvidence(UUID evidenceId, EvidenceType type, Evidence.StoredFile file,
+                                   String actor, Instant now) {
+        requireDraft("attach evidence to");
+        Evidence item = new Evidence(evidenceId, this, type, file, actor, now);
+        evidence.add(item);
+        recordChange("evidence[" + evidenceId + "]", null, type + ": " + file.fileName(), true, actor, now);
+        touch(true, now);
+        return item;
+    }
+
+    public void removeEvidence(UUID evidenceId, String actor, Instant now) {
+        requireDraft("remove evidence from");
+        Evidence item = activeEvidenceItem(evidenceId);
+        item.markRemoved(actor, now);
+        recordChange("evidence[" + evidenceId + "]", item.getEvidenceType() + ": " + item.getFileName(), null,
+                true, actor, now);
+        touch(true, now);
+    }
+
+    /**
+     * A representative signs the declaration on the device (AC-R1-ACK-01).
+     * Replaces any earlier response of theirs; applies to the current
+     * content revision only.
+     */
+    public Acknowledgement acknowledge(UUID acknowledgementId, UUID representativeId, String signatureStorageKey,
+                                       String signatureSha256, String declarationVersion, String actor, Instant now) {
+        requireDraft("acknowledge");
+        activeRepresentative(representativeId);
+        supersedeResponseOf(representativeId, now);
+
+        Acknowledgement ack = Acknowledgement.signed(acknowledgementId, this, representativeId, signatureStorageKey,
+                signatureSha256, declarationVersion, contentRevision, actor, now);
+        acknowledgements.add(ack);
+        recordChange("acknowledgement[" + representativeId + "]", null,
+                "ACKNOWLEDGED (" + declarationVersion + ", revision " + contentRevision + ")", false, actor, now);
+        touch(false, now);
+        return ack;
+    }
+
+    /** A representative refuses; submission is blocked until resolved (AC-R1-ACK-02). */
+    public Acknowledgement refuse(UUID acknowledgementId, UUID representativeId, String reason,
+                                  String actor, Instant now) {
+        requireDraft("record a refusal on");
+        activeRepresentative(representativeId);
+        String cleanReason = CompanyDetails.clean(reason);
+        if (cleanReason == null) {
+            throw new IllegalArgumentException("A refusal needs a reason.");
+        }
+        supersedeResponseOf(representativeId, now);
+
+        Acknowledgement ack = Acknowledgement.refused(acknowledgementId, this, representativeId, cleanReason,
+                contentRevision, actor, now);
+        acknowledgements.add(ack);
+        recordChange("acknowledgement[" + representativeId + "]", null, "REFUSED: " + cleanReason, false, actor, now);
+        touch(false, now);
+        return ack;
+    }
+
+    /** The representative's current response, if any. */
+    public Optional<Acknowledgement> currentResponseOf(UUID representativeId) {
+        return acknowledgements.stream()
+                .filter(Acknowledgement::isValid)
+                .filter(ack -> ack.getRepresentativeId().equals(representativeId))
+                .findFirst();
+    }
+
+    public List<Evidence> activeEvidence() {
+        return evidence.stream().filter(Evidence::isActive).toList();
+    }
+
+    /** Any evidence item, including removed ones (their history stays viewable). */
+    public Optional<Evidence> evidenceItem(UUID evidenceId) {
+        return evidence.stream().filter(item -> item.getId().equals(evidenceId)).findFirst();
+    }
+
     /**
      * What still prevents submission (AC-R1-CAP-03). Empty means complete.
      * [check rule text: mandatory field list, BR-ONB-012–020]
-     *
-     * @param activeEvidenceCount evidence documents currently attached (step 3a-2)
      */
-    public List<String> missingForSubmission(int activeEvidenceCount) {
+    public List<String> missingForSubmission() {
         List<String> missing = new ArrayList<>();
         if (details.legalName() == null) missing.add("company.legalName");
         if (details.registrationNumber() == null) missing.add("company.registrationNumber");
@@ -214,11 +299,20 @@ public class CompanyRegistration implements Persistable<UUID> {
             }
             if (representative.getCapacity() == null) missing.add(prefix + "capacity");
             if (representative.getPhone() == null) missing.add(prefix + "phone");
+            if (representative.isAcknowledgementRequired()) {
+                // AC-R1-ACK-04: every required representative acknowledges the current content.
+                Optional<Acknowledgement> response = currentResponseOf(representative.getId());
+                if (response.isEmpty()) {
+                    missing.add(prefix + "acknowledgement");
+                } else if (response.get().getOutcome() == Acknowledgement.Outcome.REFUSED) {
+                    missing.add(prefix + "refused");
+                }
+            }
         }
         if (active.stream().noneMatch(Representative::isPrimaryContact) && !active.isEmpty()) {
             missing.add("representatives.primaryContact");
         }
-        if (activeEvidenceCount == 0) {
+        if (activeEvidence().isEmpty()) {
             missing.add("evidence.atLeastOne");
         }
         return missing;
@@ -249,6 +343,17 @@ public class CompanyRegistration implements Persistable<UUID> {
                 .orElseThrow(() -> new RegistrationNotFoundException("Representative", representativeId));
     }
 
+    private Evidence activeEvidenceItem(UUID evidenceId) {
+        return activeEvidence().stream()
+                .filter(item -> item.getId().equals(evidenceId))
+                .findFirst()
+                .orElseThrow(() -> new RegistrationNotFoundException("Evidence", evidenceId));
+    }
+
+    private void supersedeResponseOf(UUID representativeId, Instant now) {
+        currentResponseOf(representativeId).ifPresent(previous -> previous.invalidate("Superseded by a new response", now));
+    }
+
     private void requireDraft(String action) {
         if (status != RegistrationStatus.DRAFT) {
             throw new InvalidRegistrationStateException(action, status);
@@ -268,9 +373,15 @@ public class CompanyRegistration implements Persistable<UUID> {
                 id, field, oldValue, newValue, material, actor, now));
     }
 
+    /**
+     * A material change creates a new content revision, which no one has
+     * acknowledged yet: every current response is invalidated (AC-R1-ACK-03).
+     */
     private void touch(boolean material, Instant now) {
         if (material) {
             contentRevision++;
+            String reason = "Material change: content revision " + contentRevision;
+            acknowledgements.stream().filter(Acknowledgement::isValid).forEach(ack -> ack.invalidate(reason, now));
         }
         updatedAt = now;
     }

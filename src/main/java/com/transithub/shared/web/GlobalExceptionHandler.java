@@ -24,6 +24,7 @@ import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
@@ -112,6 +113,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemCodes.ensureCode(body);
 
         return ResponseEntity.status(status).headers(headers).body(body);
+    }
+
+    /** The servlet container refused an upload over the configured multipart limit. */
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+            MaxUploadSizeExceededException exception,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE).headers(headers).body(problem(
+                HttpStatus.CONTENT_TOO_LARGE,
+                "File too large",
+                "The upload exceeds the maximum allowed size.",
+                ProblemCodes.FILE_TOO_LARGE));
     }
 
     /**

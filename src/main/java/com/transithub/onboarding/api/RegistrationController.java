@@ -4,6 +4,13 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,10 +20,14 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.transithub.onboarding.domain.CompanyRegistration;
+import com.transithub.onboarding.domain.Declaration;
+import com.transithub.onboarding.domain.EvidenceType;
 import com.transithub.onboarding.service.RegistrationService;
 
 import jakarta.validation.Valid;
@@ -45,6 +56,12 @@ class RegistrationController {
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(registration.getId()).toUri();
         return ResponseEntity.created(location).body(RegistrationResponse.from(registration));
+    }
+
+    /** The declaration representatives sign; its version is sent back with the signature. */
+    @GetMapping("/declaration")
+    Declaration declaration() {
+        return Declaration.CURRENT;
     }
 
     @GetMapping("/{id}")
@@ -84,6 +101,72 @@ class RegistrationController {
 
         return RegistrationResponse.from(registrations.updateRepresentative(
                 id, representativeId, request.version(), request.toDomain()));
+    }
+
+    /** Attach a document: PDF, JPEG or PNG, at most 10 MB (AC-R1-CAP-06). */
+    @PostMapping(path = "/{id}/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    ResponseEntity<RegistrationResponse> attachEvidence(
+            @PathVariable UUID id,
+            @RequestParam long version,
+            @RequestParam EvidenceType evidenceType,
+            @RequestPart("file") MultipartFile file) throws IOException {
+
+        return ResponseEntity.status(201).body(RegistrationResponse.from(registrations.attachEvidence(
+                id, version, evidenceType, file.getOriginalFilename(), file.getBytes())));
+    }
+
+    /** Removes the document from the draft; the record and its history are kept. */
+    @DeleteMapping("/{id}/evidence/{evidenceId}")
+    RegistrationResponse removeEvidence(
+            @PathVariable UUID id,
+            @PathVariable UUID evidenceId,
+            @RequestParam long version) {
+
+        return RegistrationResponse.from(registrations.removeEvidence(id, evidenceId, version));
+    }
+
+    /**
+     * Downloads a document. Always as an attachment and with
+     * {@code nosniff}, so a browser never runs uploaded content.
+     */
+    @GetMapping("/{id}/evidence/{evidenceId}/content")
+    ResponseEntity<byte[]> evidenceContent(@PathVariable UUID id, @PathVariable UUID evidenceId) {
+        RegistrationService.EvidenceContent file = registrations.evidenceContent(id, evidenceId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(file.fileName(), StandardCharsets.UTF_8).build().toString())
+                .header("X-Content-Type-Options", "nosniff")
+                .cacheControl(CacheControl.noStore())
+                .body(file.content());
+    }
+
+    /**
+     * The representative read the declaration and signed on screen
+     * (AC-R1-ACK-01). The signature is a PNG image.
+     */
+    @PostMapping(path = "/{id}/representatives/{representativeId}/acknowledgement",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    ResponseEntity<RegistrationResponse> acknowledge(
+            @PathVariable UUID id,
+            @PathVariable UUID representativeId,
+            @RequestParam long version,
+            @RequestParam String declarationVersion,
+            @RequestPart("signature") MultipartFile signature) throws IOException {
+
+        return ResponseEntity.status(201).body(RegistrationResponse.from(registrations.acknowledge(
+                id, representativeId, version, declarationVersion, signature.getBytes())));
+    }
+
+    /** The representative refused to acknowledge (AC-R1-ACK-02). */
+    @PostMapping("/{id}/representatives/{representativeId}/refusal")
+    ResponseEntity<RegistrationResponse> refuse(
+            @PathVariable UUID id,
+            @PathVariable UUID representativeId,
+            @Valid @RequestBody RegistrationRequests.RefusalRequest request) {
+
+        return ResponseEntity.status(201).body(RegistrationResponse.from(registrations.refuse(
+                id, representativeId, request.version(), request.reason())));
     }
 
     /** Removes the representative from the draft; the record and its history are kept. */

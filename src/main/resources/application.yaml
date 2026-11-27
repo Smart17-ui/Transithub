@@ -17,6 +17,12 @@ spring:
   flyway:
     enabled: true
 
+  servlet:
+    multipart:
+      # Evidence is at most 10 MB (AC-R1-CAP-06); the service checks it exactly.
+      max-file-size: 10MB
+      max-request-size: 11MB
+
 server:
   port: 8080
 
@@ -39,6 +45,12 @@ transithub:
       client-ids: ${OIDC_CLIENT_IDS:transithub-backoffice}
       # Optional; defaults to <issuer>/protocol/openid-connect/certs.
       jwk-set-uri: ${OIDC_JWK_SET_URI:}
+
+  storage:
+    # Encrypted file storage for evidence and signatures (R-17, ADR-0017).
+    root: ${TRANSITHUB_STORAGE_ROOT:./data/files}
+    # Base64 of 32 random bytes. Required; never commit a real key.
+    encryption-key: ${TRANSITHUB_STORAGE_KEY:}
 
   bootstrap:
     # One-time creation of the first platform administrator. Set the subject

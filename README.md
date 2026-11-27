@@ -63,6 +63,13 @@ Run both scripts as the PostgreSQL superuser, after replacing `CHANGE_ME` in eac
 [Environment]::SetEnvironmentVariable('DB_RUNTIME_PASSWORD','<transithub_runtime password>','User')
 ```
 
+To run the application (not needed for tests), also create the **file encryption key** for evidence and signatures. Keep it safe: files encrypted with a lost key cannot be recovered.
+
+```powershell
+$key = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)
+[Environment]::SetEnvironmentVariable('TRANSITHUB_STORAGE_KEY',[Convert]::ToBase64String($key),'User')
+```
+
 Restart VS Code or your terminal afterwards so it sees them.
 
 | Variable | Required | Default | Purpose |
@@ -72,6 +79,8 @@ Restart VS Code or your terminal afterwards so it sees them.
 | `DB_URL` | No | `jdbc:postgresql://localhost:5432/transithub_dev` | Development database |
 | `TEST_DB_URL` | No | `jdbc:postgresql://localhost:5432/transithub_test` | Test database |
 | `DB_MIGRATION_USERNAME` / `DB_RUNTIME_USERNAME` | No | `transithub_app` / `transithub_runtime` | Role names |
+| `TRANSITHUB_STORAGE_KEY` | To run the app | — | Base64 AES-256 key that encrypts evidence and signatures at rest. Tests use a built-in test key |
+| `TRANSITHUB_STORAGE_ROOT` | No | `./data/files` | Folder for encrypted files (git-ignored) |
 | `OIDC_ISSUER` | No | `http://localhost:8180/realms/staff` | Keycloak realm that issues tokens |
 | `OIDC_CLIENT_IDS` | No | `transithub-backoffice` | Comma-separated client ids allowed to call the API |
 | `OIDC_JWK_SET_URI` | No | `<issuer>/protocol/openid-connect/certs` | Token signing keys |

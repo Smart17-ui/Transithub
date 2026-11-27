@@ -66,6 +66,11 @@ final class RegistrationRequests {
             @NotNull @Valid CompanyDetailsRequest details) {
     }
 
+    record RefusalRequest(
+            @NotNull Long version,
+            @NotBlank @Size(max = 2000) String reason) {
+    }
+
     record RepresentativeRequest(
             @NotNull Long version,
             @NotBlank @Size(max = 200) String fullName,

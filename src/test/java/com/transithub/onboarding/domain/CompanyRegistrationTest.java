@@ -95,7 +95,7 @@ class CompanyRegistrationTest {
 
     @Test
     void AC_R1_CAP_03_incompleteDraftListsEverythingMissing() {
-        List<String> missing = draft(CompanyDetails.empty()).missingForSubmission(0);
+        List<String> missing = draft(CompanyDetails.empty()).missingForSubmission();
 
         assertTrue(missing.containsAll(List.of(
                 "company.legalName", "company.registrationNumber", "company.businessType",
@@ -108,11 +108,67 @@ class CompanyRegistrationTest {
         CompanyRegistration registration = draft(new CompanyDetails(
                 "Kafue Coaches Ltd", null, "120230045678", "Bus operator", "Lusaka", "Kafue",
                 "Plot 12, Kafue Road", null, null, "+260971000001"));
-        registration.addRepresentative(UuidV7.generate(), new RepresentativeDetails(
+        Representative banda = registration.addRepresentative(UuidV7.generate(), new RepresentativeDetails(
                 "Mr Banda", RepresentativeDetails.IdDocumentType.NRC, "123456/10/1", "Director",
                 "+260971000002", null, true, true), JOSEPH, NOW);
+        registration.attachEvidence(UuidV7.generate(), EvidenceType.CERTIFICATE_OF_INCORPORATION, file(), JOSEPH, NOW);
+        registration.acknowledge(UuidV7.generate(), banda.getId(), UuidV7.generate().toString(), "sha",
+                Declaration.CURRENT.version(), JOSEPH, NOW);
 
-        assertEquals(List.of(), registration.missingForSubmission(1));
+        assertEquals(List.of(), registration.missingForSubmission());
+    }
+
+    @Test
+    void AC_R1_ACK_01_acknowledgementAppliesToTheCurrentContentRevision() {
+        CompanyRegistration registration = draft(CompanyDetails.empty());
+        Representative banda = registration.addRepresentative(UuidV7.generate(), representative("Mr Banda", true), JOSEPH, NOW);
+
+        Acknowledgement ack = registration.acknowledge(UuidV7.generate(), banda.getId(), UuidV7.generate().toString(),
+                "sha", Declaration.CURRENT.version(), JOSEPH, NOW);
+
+        assertEquals(registration.getContentRevision(), ack.getContentRevision());
+        assertEquals(Acknowledgement.Outcome.ACKNOWLEDGED, registration.currentResponseOf(banda.getId()).orElseThrow().getOutcome());
+    }
+
+    @Test
+    void AC_R1_ACK_02_refusalBlocksSubmission() {
+        CompanyRegistration registration = draft(CompanyDetails.empty());
+        Representative banda = registration.addRepresentative(UuidV7.generate(), representative("Mr Banda", true), JOSEPH, NOW);
+
+        registration.refuse(UuidV7.generate(), banda.getId(), "Does not agree with the declared fleet size", JOSEPH, NOW);
+
+        assertTrue(registration.missingForSubmission().contains("representative[" + banda.getId() + "].refused"));
+    }
+
+    @Test
+    void AC_R1_ACK_03_materialChangeInvalidatesEverySignature() {
+        CompanyRegistration registration = draft(details("Kafue Coaches Ltd", null));
+        Representative banda = registration.addRepresentative(UuidV7.generate(), representative("Mr Banda", true), JOSEPH, NOW);
+        registration.acknowledge(UuidV7.generate(), banda.getId(), UuidV7.generate().toString(), "sha",
+                Declaration.CURRENT.version(), JOSEPH, NOW);
+
+        registration.updateDetails(details("Kafue Coaches Ltd", "+260971000009"), JOSEPH, NOW);
+        assertTrue(registration.currentResponseOf(banda.getId()).isPresent(), "a phone change keeps the signature");
+
+        registration.attachEvidence(UuidV7.generate(), EvidenceType.TAX_CLEARANCE, file(), JOSEPH, NOW);
+        assertTrue(registration.currentResponseOf(banda.getId()).isEmpty(), "new evidence needs a new signature");
+    }
+
+    @Test
+    void anewResponseReplacesTheRepresentativesEarlierOne() {
+        CompanyRegistration registration = draft(CompanyDetails.empty());
+        Representative banda = registration.addRepresentative(UuidV7.generate(), representative("Mr Banda", true), JOSEPH, NOW);
+        registration.refuse(UuidV7.generate(), banda.getId(), "Not yet", JOSEPH, NOW);
+
+        registration.acknowledge(UuidV7.generate(), banda.getId(), UuidV7.generate().toString(), "sha",
+                Declaration.CURRENT.version(), JOSEPH, NOW);
+
+        assertEquals(Acknowledgement.Outcome.ACKNOWLEDGED,
+                registration.currentResponseOf(banda.getId()).orElseThrow().getOutcome());
+    }
+
+    private static Evidence.StoredFile file() {
+        return new Evidence.StoredFile("certificate.pdf", "application/pdf", 1234, "sha", UuidV7.generate().toString());
     }
 
     private static CompanyRegistration draft(CompanyDetails details) {

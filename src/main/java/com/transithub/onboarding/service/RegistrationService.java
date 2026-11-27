@@ -3,6 +3,9 @@ package com.transithub.onboarding.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,22 +19,31 @@ import org.springframework.transaction.annotation.Transactional;
 import com.transithub.identity.Authorization;
 import com.transithub.identity.Permission;
 import com.transithub.onboarding.domain.CompanyDetails;
+import com.transithub.onboarding.domain.Acknowledgement;
 import com.transithub.onboarding.domain.CompanyRegistration;
+import com.transithub.onboarding.domain.Declaration;
+import com.transithub.onboarding.domain.Evidence;
+import com.transithub.onboarding.domain.EvidenceType;
 import com.transithub.onboarding.domain.RegistrationChannel;
 import com.transithub.onboarding.domain.RegistrationHistory;
 import com.transithub.onboarding.domain.Representative;
 import com.transithub.onboarding.domain.RepresentativeDetails;
+import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.RegistrationAlreadyExistsException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
+import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.repository.CompanyRegistrationRepository;
 import com.transithub.onboarding.repository.RegistrationHistoryRepository;
 import com.transithub.shared.audit.AuditRecorder;
 import com.transithub.shared.id.UuidV7;
 import com.transithub.shared.security.CurrentActor;
+import com.transithub.shared.storage.FileStorage;
+import com.transithub.shared.storage.FileType;
 
 /**
- * Registration drafts: capture, correction and representatives
- * (UC-01.01-01, -05, -19; AC-R1-CAP-01…05).
+ * Registration drafts: capture, correction, representatives, evidence and
+ * acknowledgement (UC-01.01-01, -03, -04, -05, -19; AC-R1-CAP-01…06,
+ * AC-R1-ACK-01…04).
  *
  * <p>Every command: checks the permission; loads the registration only if the
  * caller may see it (otherwise 404); refuses a stale version (409); applies
@@ -45,22 +57,30 @@ public class RegistrationService {
     /** Registration references use the local calendar year (R-18). */
     static final ZoneId ZAMBIA = ZoneId.of("Africa/Lusaka");
 
+    /** AC-R1-CAP-06: evidence up to 10 MB. [proposed limit] */
+    public static final long MAX_EVIDENCE_BYTES = 10L * 1024 * 1024;
+
+    /** An on-screen signature image is small; anything bigger is not a signature. */
+    public static final long MAX_SIGNATURE_BYTES = 512L * 1024;
+
     private final CompanyRegistrationRepository registrations;
     private final RegistrationHistoryRepository history;
     private final Authorization authorization;
     private final CurrentActor currentActor;
     private final AuditRecorder audit;
+    private final FileStorage storage;
     private final Clock clock;
 
     public RegistrationService(CompanyRegistrationRepository registrations,
                                RegistrationHistoryRepository history,
                                Authorization authorization, CurrentActor currentActor,
-                               AuditRecorder audit, Clock clock) {
+                               AuditRecorder audit, FileStorage storage, Clock clock) {
         this.registrations = registrations;
         this.history = history;
         this.authorization = authorization;
         this.currentActor = currentActor;
         this.audit = audit;
+        this.storage = storage;
         this.clock = clock;
     }
 
@@ -138,6 +158,114 @@ public class RegistrationService {
         registration.removeRepresentative(representativeId, currentActor.id(), clock.instant());
         return saveCommand(registration, "registration.representative-removed",
                 Map.of("representativeId", representativeId.toString()));
+    }
+
+    /** Attach a document; the file is checked, encrypted and stored (AC-R1-CAP-06). */
+    public CompanyRegistration attachEvidence(UUID id, long expectedVersion, EvidenceType type,
+                                              @Nullable String originalFileName, byte[] content) {
+        authorization.require(Permission.REGISTRATION_EDIT_DRAFT);
+        CompanyRegistration registration = editable(id, expectedVersion);
+
+        FileType fileType = check(content, MAX_EVIDENCE_BYTES, FileType.PDF, FileType.JPEG, FileType.PNG);
+        String storageKey = storage.store(content);
+        Evidence item = registration.attachEvidence(UuidV7.generate(), type,
+                new Evidence.StoredFile(safeFileName(originalFileName, fileType), fileType.mediaType(),
+                        content.length, sha256(content), storageKey),
+                currentActor.id(), clock.instant());
+
+        return saveCommand(registration, "registration.evidence-attached",
+                Map.of("evidenceId", item.getId().toString(), "evidenceType", type.name(),
+                        "sha256", item.getSha256()));
+    }
+
+    public CompanyRegistration removeEvidence(UUID id, UUID evidenceId, long expectedVersion) {
+        authorization.require(Permission.REGISTRATION_EDIT_DRAFT);
+        CompanyRegistration registration = editable(id, expectedVersion);
+
+        registration.removeEvidence(evidenceId, currentActor.id(), clock.instant());
+        return saveCommand(registration, "registration.evidence-removed",
+                Map.of("evidenceId", evidenceId.toString()));
+    }
+
+    /** The decrypted content of an evidence item, for those who may see the registration. */
+    @Transactional(readOnly = true)
+    public EvidenceContent evidenceContent(UUID id, UUID evidenceId) {
+        authorization.require(Permission.REGISTRATION_VIEW);
+        Evidence item = visible(id).evidenceItem(evidenceId)
+                .orElseThrow(() -> new RegistrationNotFoundException("Evidence", evidenceId));
+        return new EvidenceContent(item.getFileName(), item.getContentType(), storage.read(item.getStorageKey()));
+    }
+
+    public record EvidenceContent(String fileName, String contentType, byte[] content) {
+    }
+
+    /**
+     * The representative has read the current declaration and signed on the
+     * device (AC-R1-ACK-01). The officer records it; the signature image is
+     * stored encrypted.
+     */
+    public CompanyRegistration acknowledge(UUID id, UUID representativeId, long expectedVersion,
+                                           String declarationVersion, byte[] signaturePng) {
+        authorization.require(Permission.REGISTRATION_EDIT_DRAFT);
+        CompanyRegistration registration = editable(id, expectedVersion);
+
+        if (!Declaration.CURRENT.version().equals(declarationVersion)) {
+            throw new DeclarationOutdatedException(declarationVersion, Declaration.CURRENT.version());
+        }
+        check(signaturePng, MAX_SIGNATURE_BYTES, FileType.PNG);
+        String storageKey = storage.store(signaturePng);
+
+        Acknowledgement ack = registration.acknowledge(UuidV7.generate(), representativeId, storageKey,
+                sha256(signaturePng), declarationVersion, currentActor.id(), clock.instant());
+        return saveCommand(registration, "registration.acknowledged",
+                Map.of("representativeId", representativeId.toString(),
+                        "declarationVersion", declarationVersion,
+                        "acknowledgedRevision", String.valueOf(ack.getContentRevision())));
+    }
+
+    /** The representative refuses to acknowledge (AC-R1-ACK-02). */
+    public CompanyRegistration refuse(UUID id, UUID representativeId, long expectedVersion, String reason) {
+        authorization.require(Permission.REGISTRATION_EDIT_DRAFT);
+        CompanyRegistration registration = editable(id, expectedVersion);
+
+        registration.refuse(UuidV7.generate(), representativeId, reason, currentActor.id(), clock.instant());
+        return saveCommand(registration, "registration.acknowledgement-refused",
+                Map.of("representativeId", representativeId.toString()));
+    }
+
+    /** Checks size and real type (from the bytes, not the name). */
+    private static FileType check(byte[] content, long maxBytes, FileType... allowed) {
+        if (content.length == 0) {
+            throw new UploadRejectedException(UploadRejectedException.Reason.EMPTY, "The file is empty.");
+        }
+        if (content.length > maxBytes) {
+            throw new UploadRejectedException(UploadRejectedException.Reason.TOO_LARGE,
+                    "The file is larger than " + (maxBytes / 1024) + " KB.");
+        }
+        FileType detected = FileType.detect(content)
+                .filter(type -> java.util.Arrays.asList(allowed).contains(type))
+                .orElseThrow(() -> new UploadRejectedException(UploadRejectedException.Reason.UNSUPPORTED_TYPE,
+                        "Only " + java.util.Arrays.stream(allowed).map(Enum::name).toList() + " files are accepted."));
+        return detected;
+    }
+
+    /** The name shown to people: no folders, no control characters, bounded length. */
+    static String safeFileName(@Nullable String original, FileType type) {
+        String name = original == null ? "" : original;
+        name = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
+        name = name.replaceAll("[\\p{Cntrl}\"<>|:*?]", "_").trim();
+        if (name.isEmpty() || name.chars().allMatch(c -> c == '.' || c == '_')) {
+            name = "evidence." + type.name().toLowerCase(java.util.Locale.ROOT);
+        }
+        return name.length() > 150 ? name.substring(name.length() - 150) : name;
+    }
+
+    private static String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**

@@ -19,3 +19,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+transithub:
+  storage:
+    root: ${java.io.tmpdir}/transithub-test-files
+    # TEST ONLY: a fixed, public key for throwaway test files. Never use it elsewhere.
+    encryption-key: VEVTVC1PTkxZLWtleS1ub3QtZm9yLXJlYWwtZGF0YSE=

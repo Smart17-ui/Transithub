@@ -6,8 +6,10 @@ import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
 
+import com.transithub.onboarding.domain.Acknowledgement;
 import com.transithub.onboarding.domain.CompanyDetails;
 import com.transithub.onboarding.domain.CompanyRegistration;
+import com.transithub.onboarding.domain.Evidence;
 import com.transithub.onboarding.domain.RegistrationHistory;
 import com.transithub.onboarding.domain.Representative;
 import com.transithub.onboarding.domain.RepresentativeDetails;
@@ -27,6 +29,7 @@ record RegistrationResponse(
         long version,
         CompanyDetails details,
         List<RepresentativeResponse> representatives,
+        List<EvidenceResponse> evidence,
         List<String> missingForSubmission,
         Instant createdAt,
         Instant updatedAt) {
@@ -41,9 +44,11 @@ record RegistrationResponse(
                 registration.getContentRevision(),
                 registration.getVersion(),
                 registration.getDetails(),
-                registration.activeRepresentatives().stream().map(RepresentativeResponse::from).toList(),
-                // Evidence arrives in step 3a-2; until then none can be attached.
-                registration.missingForSubmission(0),
+                registration.activeRepresentatives().stream()
+                        .map(representative -> RepresentativeResponse.from(representative, registration))
+                        .toList(),
+                registration.activeEvidence().stream().map(EvidenceResponse::from).toList(),
+                registration.missingForSubmission(),
                 registration.getCreatedAt(),
                 registration.getUpdatedAt());
     }
@@ -58,14 +63,40 @@ record RegistrationResponse(
             @Nullable String phone,
             @Nullable String email,
             boolean acknowledgementRequired,
-            boolean primaryContact) {
+            boolean primaryContact,
+            @Nullable AcknowledgementResponse acknowledgement) {
 
-        static RepresentativeResponse from(Representative representative) {
+        static RepresentativeResponse from(Representative representative, CompanyRegistration registration) {
             return new RepresentativeResponse(
                     representative.getId(), representative.getPosition(), representative.getFullName(),
                     representative.getIdDocumentType(), representative.getIdDocumentNumber(),
                     representative.getCapacity(), representative.getPhone(), representative.getEmail(),
-                    representative.isAcknowledgementRequired(), representative.isPrimaryContact());
+                    representative.isAcknowledgementRequired(), representative.isPrimaryContact(),
+                    registration.currentResponseOf(representative.getId())
+                            .map(AcknowledgementResponse::from)
+                            .orElse(null));
+        }
+    }
+
+    /** The representative's current response; {@code null} means still pending. */
+    record AcknowledgementResponse(
+            String outcome, @Nullable String declarationVersion, int contentRevision,
+            @Nullable String refusalReason, String recordedBy, Instant recordedAt) {
+
+        static AcknowledgementResponse from(Acknowledgement ack) {
+            return new AcknowledgementResponse(ack.getOutcome().name(), ack.getDeclarationVersion(),
+                    ack.getContentRevision(), ack.getRefusalReason(), ack.getRecordedBy(), ack.getRecordedAt());
+        }
+    }
+
+    record EvidenceResponse(
+            UUID id, String evidenceType, String fileName, String contentType, long sizeBytes,
+            String sha256, String uploadedBy, Instant uploadedAt) {
+
+        static EvidenceResponse from(Evidence item) {
+            return new EvidenceResponse(item.getId(), item.getEvidenceType().name(), item.getFileName(),
+                    item.getContentType(), item.getSizeBytes(), item.getSha256(), item.getUploadedBy(),
+                    item.getUploadedAt());
         }
     }
 

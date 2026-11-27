@@ -27,6 +27,9 @@ public final class ProblemCodes {
     public static final String IDEMPOTENCY_KEY_INVALID = "idempotency-key-invalid";
     public static final String IDEMPOTENCY_KEY_REUSED = "idempotency-key-reused";
     public static final String IDEMPOTENCY_REQUEST_IN_PROGRESS = "idempotency-request-in-progress";
+    public static final String EMPTY_FILE = "empty-file";
+    public static final String FILE_TOO_LARGE = "file-too-large";
+    public static final String UNSUPPORTED_FILE_TYPE = "unsupported-file-type";
     public static final String INTERNAL_ERROR = "internal-error";
 
     private ProblemCodes() {

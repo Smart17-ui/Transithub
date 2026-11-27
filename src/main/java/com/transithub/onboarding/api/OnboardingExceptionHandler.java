@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.transithub.onboarding.domain.exception.CompanyAlreadyExistsException;
+import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
+import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
 import com.transithub.onboarding.domain.exception.RegistrationAlreadyExistsException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
@@ -25,6 +27,25 @@ class OnboardingExceptionHandler {
 
     static final String REGISTRATION_ALREADY_EXISTS = "registration-already-exists";
     static final String INVALID_REGISTRATION_STATE = "invalid-registration-state";
+    static final String DECLARATION_OUTDATED = "declaration-outdated";
+
+    @ExceptionHandler(UploadRejectedException.class)
+    ProblemDetail uploadRejected(UploadRejectedException exception) {
+        return switch (exception.reason()) {
+            case EMPTY -> problem(HttpStatus.BAD_REQUEST, "Empty file", exception.getMessage(),
+                    ProblemCodes.EMPTY_FILE);
+            case TOO_LARGE -> problem(HttpStatus.CONTENT_TOO_LARGE, "File too large", exception.getMessage(),
+                    ProblemCodes.FILE_TOO_LARGE);
+            case UNSUPPORTED_TYPE -> problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported file type",
+                    exception.getMessage(), ProblemCodes.UNSUPPORTED_FILE_TYPE);
+        };
+    }
+
+    @ExceptionHandler(DeclarationOutdatedException.class)
+    ProblemDetail declarationOutdated(DeclarationOutdatedException exception) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Declaration outdated", exception.getMessage(),
+                DECLARATION_OUTDATED);
+    }
 
     @ExceptionHandler(CompanyAlreadyExistsException.class)
     ProblemDetail companyAlreadyExists(CompanyAlreadyExistsException exception) {
