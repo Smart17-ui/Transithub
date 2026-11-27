@@ -58,6 +58,25 @@ class AccessControlIntegrationTest {
     }
 
     @Test
+    void writeRequestsWithoutATokenAreRejectedAsUnauthenticated() throws Exception {
+        mockMvc.perform(post("/api/v1/companies")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(companyJson(code())))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("unauthenticated"));
+    }
+
+    @Test
+    void csrfProtectionStillGuardsCookieBasedRequests() throws Exception {
+        // A browser-forged request: cookies attached, no bearer token, no CSRF token.
+        mockMvc.perform(post("/api/v1/companies")
+                        .cookie(new jakarta.servlet.http.Cookie("SESSION", "stolen-session"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(companyJson(code())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void healthCheckNeedsNoTokenAndRevealsNoDetails() throws Exception {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
