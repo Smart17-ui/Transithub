@@ -3,6 +3,7 @@ import { Anchor, Button, Checkbox, Paper, Select, SimpleGrid, Text, TextInput, T
 import { useMutation } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api } from '../api/client'
+import { userManager } from '../auth/oidc'
 import { company } from '../brand/company'
 import { ApiError } from '../components/common'
 import { PublicPage } from '../components/PublicPage'
@@ -33,8 +34,9 @@ const fleetSizes = ['1–5 buses', '6–20 buses', '21–50 buses', 'More than 5
 export function RegisterCompanyPage() {
   return (
     <PublicPage eyebrow="Register your company" title="Bring your bus company to TransitHub"
-      lead="Tell us a little about your company. Our team will contact you to complete your registration and guide you through each step.">
+      lead="Create your account to apply online, or ask our team to help you register.">
       <section className="landing-section" aria-label="Registration request">
+        <ApplyOnline />
         <div className="register-layout">
           <RegisterForm />
           <aside className="register-aside">
@@ -59,6 +61,36 @@ export function RegisterCompanyPage() {
         </div>
       </section>
     </PublicPage>
+  )
+}
+
+/**
+ * Self-service sign-up (Release 1 §9, SS-13): opens the sign-in service's
+ * "Create your account" page directly, with what the account is for.
+ */
+function ApplyOnline() {
+  const [error, setError] = useState('')
+  const start = () => {
+    setError('')
+    userManager.signinRedirect({ prompt: 'create', state: { returnTo: '/' } })
+      .catch(() => setError('Our sign-in service isn’t responding right now. Please try again in a moment.'))
+  }
+  return (
+    <Paper className="service-card apply-online" radius="lg" p="xl" mb="lg">
+      <div>
+        <Text size="xs" fw={700} tt="uppercase" lts={1} c="var(--th-accent-text)">Apply online</Text>
+        <Title order={2} className="apply-online-title">Create your account to get started</Title>
+        <Text c="dimmed" mt={6} maw={620}>
+          The account is for you, the owner, director or manager applying for the company. Use your own email address.
+          Once your company is approved, the same account manages your company on TransitHub.
+        </Text>
+        <Text size="sm" c="dimmed" mt="sm">
+          Travelling? You don’t need an account to book. TransitHub or bus company staff? Your administrator sets up your account.
+        </Text>
+        {error && <Text size="sm" c="red" mt="sm" role="alert">{error}</Text>}
+      </div>
+      <Button size="md" radius="xl" color="teal" onClick={start}>Create your account <span className="button-arrow">→</span></Button>
+    </Paper>
   )
 }
 
@@ -121,7 +153,7 @@ function RegisterForm() {
 
   return (
     <Paper component="form" className="service-card contact-form" radius="xl" p="xl" onSubmit={submit} noValidate>
-      <Title order={2} className="contact-form-title">Request registration</Title>
+      <Title order={2} className="contact-form-title">Or ask our team to help you</Title>
       <Text size="sm" c="dimmed" mt={4}>It takes about two minutes. Fields marked with * are required.</Text>
 
       <TextInput label="Company name" required mt="lg" autoComplete="organization" placeholder="As registered with PACRA"

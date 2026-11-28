@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AppShell, Button, Container, Group, Text } from '@mantine/core'
+import { AppShell, Button, Container, Group, Paper, Text, Title } from '@mantine/core'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { User } from 'oidc-client-ts'
 import { userManager } from './auth/oidc'
 import { Logo } from './brand/Logo'
-import { CenterMessage } from './components/common'
+import { CenterMessage, useMe } from './components/common'
 import { ColorSchemeToggle } from './components/ColorSchemeToggle'
 import { MobileMenu, siteLinks } from './components/MobileMenu'
 import { AboutPage } from './pages/AboutPage'
@@ -17,6 +17,7 @@ import { ScrollToLocation } from './components/PublicPage'
 import { NewRegistrationPage } from './pages/NewRegistrationPage'
 import { QueuePage } from './pages/QueuePage'
 import { RegistrationPage } from './pages/RegistrationPage'
+import { ApplicationPage } from './pages/ApplicationPage'
 import { SignInPage } from './pages/SignInPage'
 
 function App() {
@@ -66,7 +67,7 @@ function App() {
             <Link to="/" className="brand" aria-label="TransitHub home"><Logo tone="onDark" size={28} /></Link>
             {user && <>
               <span className="topbar-divider" aria-hidden />
-              <Text size="sm" className="topbar-product">Staff workspace</Text>
+              <WorkspaceLabel token={user.access_token} />
             </>}
           </Group>
           <Group gap="md">
@@ -109,12 +110,23 @@ function App() {
             <Route path="/registrations/new" element={signedIn(user && <NewRegistrationPage token={user.access_token} />)} />
             <Route path="/enquiries" element={signedIn(user && <EnquiriesPage token={user.access_token} />)} />
             <Route path="/registrations/:id" element={signedIn(user && <RegistrationPage token={user.access_token} />)} />
+            <Route path="/application/:id" element={signedIn(user && <ApplicationPage token={user.access_token} />)} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Container>
       </AppShell.Main>
     </AppShell>
   )
+}
+
+/** Says whose workspace this is: TransitHub staff, a bus company, or someone applying. */
+function WorkspaceLabel({ token }: { token: string }) {
+  const { me } = useMe(token)
+  if (!me) return null
+  const label = me.roles.length === 0 ? 'My application'
+    : me.roles.every((role) => role === 'COMPANY_ADMINISTRATOR') ? 'Company workspace'
+    : 'Staff workspace'
+  return <Text size="sm" className="topbar-product">{label}</Text>
 }
 
 /** Names the browser tab after the page: the public site for visitors, the workspace for staff. */
@@ -133,6 +145,7 @@ function PageTitle({ signedIn }: { signedIn: boolean }) {
       : pathname === '/enquiries' ? 'Enquiries'
       : pathname === '/registrations/new' ? 'New registration'
       : pathname.startsWith('/registrations/') ? 'Registration'
+      : pathname.startsWith('/application/') ? 'My application'
       : undefined
     const page = signedIn ? staffTitle ?? publicTitles[pathname] : publicTitles[pathname] ?? 'Sign in'
     document.title = page ? `TransitHub · ${page}` : 'TransitHub'
@@ -143,6 +156,8 @@ function PageTitle({ signedIn }: { signedIn: boolean }) {
 function initials(name: string | undefined) {
   return (name ?? '?').split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('') || '?'
 }
+
+const RETRY_KEY = 'transithub.signin-retry'
 
 function AuthCallback({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   const navigate = useNavigate()
@@ -155,9 +170,43 @@ function AuthCallback({ onSignedIn }: { onSignedIn: (user: User) => void }) {
       onSignedIn(user)
       const returnTo = (user.state as { returnTo?: string } | undefined)?.returnTo
       navigate(returnTo?.startsWith('/') ? returnTo : '/', { replace: true })
-    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Sign-in could not be completed.'))
+    }).catch(async () => {
+      // Usually harmless: the sign-in finished in another tab (for example after
+      // "Confirm my email" opened a new one), or this page was reloaded, so its
+      // one-time sign-in ticket is already used. Recover instead of showing an error.
+      const existing = await userManager.getUser().catch(() => null)
+      if (existing && !existing.expired) {
+        onSignedIn(existing)
+        navigate('/', { replace: true })
+        return
+      }
+      // Still signed in at the sign-in service: one fresh attempt returns at once.
+      const last = Number(sessionStorage.getItem(RETRY_KEY) ?? 0)
+      if (Date.now() - last > 60_000) {
+        sessionStorage.setItem(RETRY_KEY, String(Date.now()))
+        try { await userManager.signinRedirect({ redirectMethod: 'replace', state: { returnTo: '/' } }); return }
+        catch { /* fall through to the message */ }
+      }
+      setError('We couldn’t finish signing you in. Please try again.')
+    })
   }, [navigate, onSignedIn])
-  return <CenterMessage title={error ? 'Sign-in failed' : 'Signing you in'} detail={error || 'Returning to your workspace…'} />
+
+  if (error) {
+    return (
+      <Paper className="panel center-message" radius="lg" p="xl">
+        <Title order={3}>Sign-in didn’t finish</Title>
+        <Text c="dimmed" mt="xs">{error} If you just confirmed your email, your account is ready: simply sign in.</Text>
+        <Group mt="lg" gap="sm" justify="center">
+          <Button radius="xl" color="teal" onClick={() => {
+            sessionStorage.removeItem(RETRY_KEY)
+            void userManager.signinRedirect({ redirectMethod: 'replace', state: { returnTo: '/' } })
+          }}>Sign in</Button>
+          <Button radius="xl" variant="default" component={Link} to="/">Back to home</Button>
+        </Group>
+      </Paper>
+    )
+  }
+  return <CenterMessage title="Signing you in" detail="Just a moment…" />
 }
 
 export default App

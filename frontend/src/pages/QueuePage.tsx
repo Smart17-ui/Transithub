@@ -4,6 +4,7 @@ import { useDebouncedValue } from '@mantine/hooks'
 import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
 import { api } from '../api/client'
+import { ApplicantHome } from './ApplicantHome'
 import type { RegistrationListItem, RegistrationStatus } from '../api/types'
 import { ApiError, StatusBadge, formatDateTime, roleIntro, useMe } from '../components/common'
 
@@ -53,7 +54,10 @@ export function QueuePage({ token }: { token: string }) {
   })
 
   if (me && !can('registration.view')) {
-    return can('enquiry.manage') ? <Navigate to="/enquiries" replace /> : <CompanyHome name={me.displayName} />
+    if (can('enquiry.manage')) return <Navigate to="/enquiries" replace />
+    // No roles at all: someone who signed up to bring their bus company to TransitHub.
+    if (me.emailNotConfirmed || me.roles.length === 0) return <ApplicantHome token={token} name={me.displayName} emailNotConfirmed={!!me.emailNotConfirmed} />
+    return <CompanyHome name={me.displayName} />
   }
 
   const totalPages = list.data ? Math.max(1, Math.ceil(list.data.total / PAGE_SIZE)) : 1

@@ -86,6 +86,23 @@ export type Registration = {
   allowedActions: string[]
   createdAt: string
   updatedAt: string
+  /** Set by the app for a self-service application: its commands go to the applicant's own API. */
+  basePath?: string
+}
+
+/** A self-service application as its applicant sees it (Release 1 §9, SS-7). */
+export type Application = Omit<Registration, 'channel' | 'capturedBy' | 'contentRevision'> & {
+  timeline: { status: RegistrationStatus; at: string; note: string | null }[]
+  appealDeadline: string | null
+}
+
+export type ApplicationSummary = {
+  id: string
+  reference: string
+  status: RegistrationStatus
+  legalName: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type RegistrationListItem = {
@@ -234,6 +251,8 @@ export type Me = {
   active: boolean
   roles: string[]
   permissions: string[]
+  /** Set by the app, not the server: signed up, but the email address is not confirmed yet. */
+  emailNotConfirmed?: boolean
 }
 
 export type EnquiryTopic = 'COMPANY_REGISTRATION' | 'TRAVEL' | 'PARTNERSHIP' | 'OTHER'

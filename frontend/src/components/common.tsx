@@ -2,7 +2,7 @@ import { Alert, Anchor, Badge, Paper, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api, ApiProblem } from '../api/client'
-import type { EvidenceType, RegistrationStatus } from '../api/types'
+import type { EvidenceType, Me, RegistrationStatus } from '../api/types'
 
 export const statusLabels: Record<RegistrationStatus, string> = {
   DRAFT: 'Draft',
@@ -125,8 +125,24 @@ function shortId(id: string) {
 }
 
 /** The signed-in user's roles and permissions in the current scope. */
+/**
+ * The signed-in user. Someone who just created their own account (self-service
+ * sign-up) is not known to TransitHub yet: they are registered here, once.
+ */
+async function loadMe(token: string): Promise<Me> {
+  const me = await api.me(token)
+  if (me.registered) return me
+  try {
+    await api.createAccount(token)
+  } catch (error) {
+    if (error instanceof ApiProblem && error.code === 'email-not-verified') return { ...me, emailNotConfirmed: true }
+    throw error
+  }
+  return api.me(token)
+}
+
 export function useMe(token: string) {
-  const query = useQuery({ queryKey: ['me'], queryFn: () => api.me(token), staleTime: 60_000 })
+  const query = useQuery({ queryKey: ['me'], queryFn: () => loadMe(token), staleTime: 60_000 })
   const permissions = new Set(query.data?.permissions ?? [])
   return { me: query.data, loading: query.isPending, can: (permission: string) => permissions.has(permission) }
 }

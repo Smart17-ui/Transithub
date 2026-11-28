@@ -127,13 +127,17 @@ export function RepresentativeDialog({ token, registration, representative, open
   const emailError = form.email && !EMAIL.test(form.email.trim()) ? 'Enter a valid email address' : null
   const clean = (value: string | null) => value?.trim() || null
   const signed = representative?.acknowledgement?.outcome === 'ACKNOWLEDGED'
+  const applicant = !!registration.basePath
 
   return (
-    <CommandDialog opened={opened} onClose={onClose} title={representative ? `Edit ${representative.fullName}` : 'Add a representative'}
+    <CommandDialog opened={opened} onClose={onClose}
+      title={representative ? `Edit ${representative.fullName}` : applicant ? 'Add a director or owner' : 'Add a representative'}
       intro={signed
-        ? <Alert color="orange" variant="light">Changing a representative invalidates the declarations already signed. Every representative required to sign will need to sign again.</Alert>
-        : <Text size="sm" c="dimmed">An individual authorised to act for the company, such as a director or owner. Identity document, capacity and telephone number are required before submission.</Text>}
-      submitLabel={representative ? 'Save changes' : 'Add representative'}
+        ? <Alert color="orange" variant="light">Changing these details cancels the signatures already given. Everyone who needs to sign will need to sign again.</Alert>
+        : <Text size="sm" c="dimmed">{applicant
+          ? 'Add yourself and every director or owner who signs for the company. You will need each person’s NRC or passport number, role and phone number.'
+          : 'An individual authorised to act for the company, such as a director or owner. Identity document, capacity and telephone number are required before submission.'}</Text>}
+      submitLabel={representative ? 'Save changes' : applicant ? 'Add person' : 'Add representative'}
       canSubmit={!!form.fullName.trim() && !phoneError && !emailError} busy={command.isPending} error={command.error}
       onSubmit={() => {
         const body: RepresentativeInput = {
@@ -147,7 +151,7 @@ export function RepresentativeDialog({ token, registration, representative, open
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <TextInput label="Full name" placeholder="e.g. Mwansa Banda" required value={form.fullName}
           onChange={(e) => set('fullName', e.currentTarget.value)} maxLength={200} data-autofocus />
-        <TextInput label="Capacity" placeholder="e.g. Managing Director" value={form.capacity ?? ''}
+        <TextInput label={applicant ? 'Role in the company' : 'Capacity'} placeholder="e.g. Managing Director" value={form.capacity ?? ''}
           onChange={(e) => set('capacity', e.currentTarget.value)} maxLength={100} />
         <Select label="Identity document" data={[{ value: 'NRC', label: 'NRC' }, { value: 'PASSPORT', label: 'Passport' }, { value: 'OTHER', label: 'Other' }]}
           value={form.idDocumentType} onChange={(v) => set('idDocumentType', (v ?? 'NRC') as IdDocumentType)} allowDeselect={false} />
@@ -159,9 +163,9 @@ export function RepresentativeDialog({ token, registration, representative, open
           onChange={(e) => set('email', e.currentTarget.value)} maxLength={254} />
       </SimpleGrid>
       <Group gap="xl">
-        <Checkbox label="Primary contact (receives the account invitation upon approval)" checked={form.primaryContact}
+        <Checkbox label={applicant ? 'Main contact for this application' : 'Primary contact (receives the account invitation upon approval)'} checked={form.primaryContact}
           onChange={(e) => set('primaryContact', e.currentTarget.checked)} />
-        <Checkbox label="Required to sign the declaration" checked={form.acknowledgementRequired}
+        <Checkbox label={applicant ? 'Signs the declaration' : 'Required to sign the declaration'} checked={form.acknowledgementRequired}
           onChange={(e) => set('acknowledgementRequired', e.currentTarget.checked)} />
       </Group>
     </CommandDialog>
@@ -186,12 +190,15 @@ export function EvidenceUploadDialog({ token, registration, opened, onClose }: D
     : !ACCEPTED.includes(file.type) ? 'Only PDF, JPEG and PNG files are accepted.'
     : null
   const signed = registration.representatives.some((r) => r.acknowledgement?.outcome === 'ACKNOWLEDGED')
+  const applicant = !!registration.basePath
 
   return (
-    <CommandDialog opened={opened} onClose={onClose} title="Upload a supporting document"
+    <CommandDialog opened={opened} onClose={onClose} title={applicant ? 'Upload a document' : 'Upload a supporting document'}
       intro={signed
-        ? <Alert color="orange" variant="light">Uploading a document invalidates the declarations already signed; representatives will need to sign again.</Alert>
-        : <Text size="sm" c="dimmed">Documents are encrypted at rest. A clear photograph of a paper document is acceptable.</Text>}
+        ? <Alert color="orange" variant="light">Uploading a document cancels the signatures already given; everyone will need to sign again.</Alert>
+        : <Text size="sm" c="dimmed">{applicant
+          ? 'A clear photo or scan is fine. Your documents are stored securely and seen only by our team.'
+          : 'Documents are encrypted at rest. A clear photograph of a paper document is acceptable.'}</Text>}
       submitLabel="Upload" canSubmit={!!file && !fileError} busy={command.isPending} error={command.error}
       onSubmit={() => command.mutate(() => api.attachEvidence(token, registration, type, file!), { onSuccess: onClose })}>
       <Select label="Document type" data={Object.entries(evidenceTypeLabels).map(([value, label]) => ({
@@ -285,6 +292,7 @@ export function SignatureDialog({ token, registration, representative, opened, o
   const [blank, setBlank] = useState(true)
   const [read, setRead] = useState(false)
   const [reason, setReason] = useState('')
+  const applicant = !!registration.basePath
   if (!representative) return null
 
   const submit = () => {
@@ -298,12 +306,14 @@ export function SignatureDialog({ token, registration, representative, opened, o
 
   return (
     <CommandDialog opened={opened} onClose={onClose} title={`Declaration: ${representative.fullName}`}
-      intro={<Text size="sm" c="dimmed">Please hand the device to {representative.fullName}, who should read the declaration below before signing.</Text>}
-      submitLabel={mode === 'sign' ? 'Record signature' : 'Record decision not to sign'} color={mode === 'sign' ? 'teal' : 'red'}
+      intro={<Text size="sm" c="dimmed">{applicant
+        ? `${representative.fullName} reads the declaration below and signs in the box, with a finger or the mouse. If that is not you, hand them this device.`
+        : `Please hand the device to ${representative.fullName}, who should read the declaration below before signing.`}</Text>}
+      submitLabel={mode === 'sign' ? (applicant ? 'Sign' : 'Record signature') : 'Record decision not to sign'} color={mode === 'sign' ? 'teal' : 'red'}
       canSubmit={mode === 'sign' ? !blank && read && !!declaration.data : !!reason.trim()}
       busy={command.isPending} error={command.error ?? declaration.error} onSubmit={submit}>
-      <SegmentedControl fullWidth value={mode} onChange={(v) => setMode(v as typeof mode)}
-        data={[{ value: 'sign', label: 'Signs the declaration' }, { value: 'refuse', label: 'Declines to sign' }]} />
+      {!applicant && <SegmentedControl fullWidth value={mode} onChange={(v) => setMode(v as typeof mode)}
+        data={[{ value: 'sign', label: 'Signs the declaration' }, { value: 'refuse', label: 'Declines to sign' }]} />}
       <Paper className="declaration" p="md" radius="md">
         <Text size="xs" c="dimmed" fw={700} tt="uppercase" lts={0.6}>Declaration {declaration.data?.version}</Text>
         <Text size="sm" mt={6} lh={1.65}>{declaration.data?.text ?? 'Loading…'}</Text>
@@ -330,7 +340,9 @@ export function RemoveDialog({ token, registration, target, opened, onClose }: D
   if (!target) return null
   return (
     <CommandDialog opened={opened} onClose={onClose} title={`Remove ${target.label}?`} color="red"
-      intro={<Text size="sm" c="dimmed">It will be removed from the application and retained in its history. Signed declarations will be invalidated.</Text>}
+      intro={<Text size="sm" c="dimmed">{registration.basePath
+        ? 'It will be removed from your application. Signatures already given will need to be given again.'
+        : 'It will be removed from the application and retained in its history. Signed declarations will be invalidated.'}</Text>}
       submitLabel="Remove" canSubmit busy={command.isPending} error={command.error}
       onSubmit={() => command.mutate(() => target.kind === 'representative'
         ? api.removeRepresentative(token, registration, target.id)

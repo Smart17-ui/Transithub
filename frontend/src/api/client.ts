@@ -1,5 +1,5 @@
 import type {
-  AssessmentOutcome, AuditPage, Company, CompanyDetails, Declaration, DecisionSummary, DuplicateFlag, Enquiry, EnquiryPage, EvidenceType, Me, NewEnquiry,
+  Application, ApplicationSummary, AssessmentOutcome, AuditPage, Company, CompanyDetails, Declaration, DecisionSummary, DuplicateFlag, Enquiry, EnquiryPage, EvidenceType, Me, NewEnquiry,
   Registration, RegistrationList, RegistrationStatus, RegistryResult, RegistrySource, RepresentativeInput, StaffMember,
   VerificationSummary,
 } from './types'
@@ -47,11 +47,21 @@ async function request<T>(path: string, token: string, init: RequestInit = {}): 
 
 const reg = (id: string) => `/api/v1/registrations/${encodeURIComponent(id)}`
 
+/**
+ * Where a registration's commands go: the staff API, or for a self-service
+ * application the applicant's own API (`basePath`), so the same capture dialogs
+ * serve both.
+ */
+const at = (r: { id: string; basePath?: string }) =>
+  `${r.basePath ?? '/api/v1/registrations'}/${encodeURIComponent(r.id)}`
+
 function post<T>(path: string, token: string, body: unknown): Promise<T> {
   return request<T>(path, token, { method: 'POST', body: JSON.stringify(body) })
 }
 
 export type ListQuery = { statuses: RegistrationStatus[]; search?: string; page?: number; size?: number }
+
+export const APPLICATIONS = '/api/v1/my/applications'
 
 export const api = {
   // Registrations
@@ -67,7 +77,7 @@ export const api = {
     post<Registration>('/api/v1/registrations', token, { channel: 'ONLINE', details }),
   getRegistration: (token: string, id: string) => request<Registration>(reg(id), token),
   updateDetails: (token: string, registration: Registration, details: CompanyDetails) =>
-    request<Registration>(`${reg(registration.id)}/details`, token, {
+    request<Registration>(`${at(registration)}/details`, token, {
       method: 'PUT',
       body: JSON.stringify({ version: registration.version, details }),
     }),
@@ -78,22 +88,22 @@ export const api = {
       { version: registration.version, reason, representativeInstructionConfirmed: true }),
   // Draft capture: representatives, evidence, signatures (AC-R1-CAP-02, -06, AC-R1-ACK-01…04)
   addRepresentative: (token: string, r: Registration, rep: RepresentativeInput) =>
-    post<Registration>(`${reg(r.id)}/representatives`, token, { version: r.version, ...rep }),
+    post<Registration>(`${at(r)}/representatives`, token, { version: r.version, ...rep }),
   updateRepresentative: (token: string, r: Registration, representativeId: string, rep: RepresentativeInput) =>
-    request<Registration>(`${reg(r.id)}/representatives/${encodeURIComponent(representativeId)}`, token,
+    request<Registration>(`${at(r)}/representatives/${encodeURIComponent(representativeId)}`, token,
       { method: 'PUT', body: JSON.stringify({ version: r.version, ...rep }) }),
   removeRepresentative: (token: string, r: Registration, representativeId: string) =>
-    request<Registration>(`${reg(r.id)}/representatives/${encodeURIComponent(representativeId)}?version=${r.version}`, token,
+    request<Registration>(`${at(r)}/representatives/${encodeURIComponent(representativeId)}?version=${r.version}`, token,
       { method: 'DELETE' }),
   attachEvidence: (token: string, r: Registration, evidenceType: EvidenceType, file: File) => {
     const form = new FormData()
     form.set('version', String(r.version))
     form.set('evidenceType', evidenceType)
     form.set('file', file)
-    return request<Registration>(`${reg(r.id)}/evidence`, token, { method: 'POST', body: form })
+    return request<Registration>(`${at(r)}/evidence`, token, { method: 'POST', body: form })
   },
   removeEvidence: (token: string, r: Registration, evidenceId: string) =>
-    request<Registration>(`${reg(r.id)}/evidence/${encodeURIComponent(evidenceId)}?version=${r.version}`, token,
+    request<Registration>(`${at(r)}/evidence/${encodeURIComponent(evidenceId)}?version=${r.version}`, token,
       { method: 'DELETE' }),
   declaration: (token: string) => request<Declaration>('/api/v1/registrations/declaration', token),
   acknowledge: (token: string, r: Registration, representativeId: string, declarationVersion: string, signature: Blob) => {
@@ -101,19 +111,19 @@ export const api = {
     form.set('version', String(r.version))
     form.set('declarationVersion', declarationVersion)
     form.set('signature', signature, 'signature.png')
-    return request<Registration>(`${reg(r.id)}/representatives/${encodeURIComponent(representativeId)}/acknowledgement`, token,
+    return request<Registration>(`${at(r)}/representatives/${encodeURIComponent(representativeId)}/acknowledgement`, token,
       { method: 'POST', body: form })
   },
   refuse: (token: string, r: Registration, representativeId: string, reason: string) =>
-    post<Registration>(`${reg(r.id)}/representatives/${encodeURIComponent(representativeId)}/refusal`, token,
+    post<Registration>(`${at(r)}/representatives/${encodeURIComponent(representativeId)}/refusal`, token,
       { version: r.version, reason }),
 
   duplicateFlags: (token: string, id: string) => request<DuplicateFlag[]>(`${reg(id)}/duplicate-flags`, token),
   audit: (token: string, id: string) => request<AuditPage>(`${reg(id)}/audit-events?limit=100&offset=0`, token),
 
   /** Downloads an evidence file through the authenticated API and hands it to the browser. */
-  downloadEvidence: async (token: string, registrationId: string, evidenceId: string, fileName: string) => {
-    const blob = await (await send(`${reg(registrationId)}/evidence/${encodeURIComponent(evidenceId)}/content`,
+  downloadEvidence: async (token: string, registrationId: string, evidenceId: string, fileName: string, basePath?: string) => {
+    const blob = await (await send(`${at({ id: registrationId, basePath })}/evidence/${encodeURIComponent(evidenceId)}/content`,
       token, { headers: { Accept: '*/*' } })).blob()
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -184,8 +194,21 @@ export const api = {
   resolveEnquiry: (token: string, id: string) =>
     post<Enquiry>(`/api/v1/enquiries/${encodeURIComponent(id)}/resolution`, token, {}),
 
+  // Self-service applications (Release 1 §9): the applicant's own, nothing else.
+  myApplications: (token: string) => request<ApplicationSummary[]>(APPLICATIONS, token),
+  startApplication: (token: string) => post<Application>(APPLICATIONS, token, {}),
+  getApplication: (token: string, id: string) => request<Application>(`${APPLICATIONS}/${encodeURIComponent(id)}`, token),
+  submitApplication: (token: string, a: Application) =>
+    post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/submission`, token, { version: a.version }),
+  takeBackApplication: (token: string, a: Application) =>
+    post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/take-back`, token, { version: a.version }),
+  withdrawApplication: (token: string, a: Application, reason: string) =>
+    post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/withdrawal`, token, { version: a.version, reason }),
+
   // Staff
   me: (token: string) => request<Me>('/api/v1/me', token),
+  /** Self-service sign-up: makes a newly signed-up person a TransitHub user (no roles). Safe to repeat. */
+  createAccount: (token: string) => post<{ userId: string; created: boolean }>('/api/v1/me/account', token, {}),
   staffNames: (token: string, ids: string[]) => {
     const params = new URLSearchParams()
     ids.forEach((id) => params.append('ids', id))

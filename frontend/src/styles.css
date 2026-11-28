@@ -431,6 +431,9 @@ html:root[data-mantine-color-scheme='dark'] .cta-band { border: 1px solid #2E406
 /* Register your company page */
 .register-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, .8fr); gap: 20px; align-items: start; }
 .register-aside { display: grid; gap: 16px; }
+.apply-online { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-color: var(--teal); background: linear-gradient(135deg, var(--tint-teal), var(--paper) 70%); }
+.apply-online-title { margin-top: 4px; color: var(--ink); font-size: 24px; letter-spacing: -.4px; }
+@media (max-width: 760px) { .apply-online { flex-direction: column; align-items: stretch; } }
 .register-next { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; color: var(--ink); line-height: 1.5; }
 @media (max-width: 900px) { .register-layout { grid-template-columns: 1fr; } }
 
@@ -568,4 +571,27 @@ html:root[data-mantine-color-scheme='dark'] .cta-band { border: 1px solid #2E406
 @media (max-width: 600px) {
   .hero-visual { padding-bottom: 0; }
   .hero-ticket { position: relative; left: auto; bottom: auto; width: calc(100% - 28px); margin: -44px auto 0; }
+}
+.applicant-not-for-me { margin-top: 28px; padding: 16px 18px; border-radius: 14px; background: var(--tint-teal); text-align: left; }
+
+/* Self-service: My application (Release 1 §9) */
+.applicant-home { display: grid; gap: 20px; max-width: 880px; margin: 0 auto; }
+.applicant-welcome { background: linear-gradient(135deg, var(--tint-teal), var(--paper) 60%); }
+.applicant-needs { margin-top: 18px; }
+.applicant-open { margin-top: 18px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
+.application-page { max-width: 980px; margin: 0 auto; }
+.application-title { margin-top: 4px; color: var(--ink); font-size: 30px; letter-spacing: -.6px; }
+.application-hero { background: linear-gradient(135deg, var(--tint-teal), var(--paper) 55%); }
+.application-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; }
+.application-progress li { display: flex; align-items: center; gap: 10px; padding-top: 12px; border-top: 3px solid var(--line); font-size: 14px; font-weight: 600; color: var(--muted); }
+.application-progress li.is-done, .application-progress li.is-current { border-color: var(--teal); color: var(--ink); }
+.application-progress-dot { display: grid; place-items: center; flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--line); color: var(--ink); font-size: 12px; font-weight: 700; }
+.application-progress li.is-done .application-progress-dot, .application-progress li.is-current .application-progress-dot { background: var(--teal); color: var(--navy); }
+.application-checklist { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+.application-timeline { margin: 0; padding: 0 0 0 18px; list-style: none; border-left: 2px solid var(--line); display: grid; gap: 16px; }
+.application-timeline li { position: relative; }
+.application-timeline li::before { content: ''; position: absolute; left: -25px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--teal); border: 2px solid var(--paper); }
+@media (max-width: 760px) {
+  .application-progress { grid-template-columns: repeat(2, 1fr); }
+  .application-checklist { grid-template-columns: 1fr; }
 }
