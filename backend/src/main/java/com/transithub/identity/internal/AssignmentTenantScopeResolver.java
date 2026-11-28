@@ -18,6 +18,9 @@ import jakarta.servlet.http.HttpServletRequest;
  *
  * <ul>
  *   <li>anonymous, unknown or disabled user: {@link TenantScope#none()};</li>
+ *   <li>an active user without any assignment (someone applying for their bus
+ *       company, Release 1 §9): {@link TenantScope#applicant(UUID)}, which shows
+ *       them only their own application;</li>
  *   <li>any platform assignment: {@link TenantScope#platform()};</li>
  *   <li>assignments in exactly one company: that company;</li>
  *   <li>assignments in several companies: the one named in
@@ -44,6 +47,9 @@ class AssignmentTenantScopeResolver implements TenantScopeResolver {
         }
 
         List<Principal.Assignment> assignments = principal.get().assignments();
+        if (assignments.isEmpty()) {
+            return TenantScope.applicant(principal.get().userId());
+        }
         if (assignments.stream().anyMatch(Principal.Assignment::isPlatform)) {
             return TenantScope.platform();
         }

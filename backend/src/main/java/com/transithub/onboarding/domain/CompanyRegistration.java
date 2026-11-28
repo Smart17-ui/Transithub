@@ -66,6 +66,10 @@ public class CompanyRegistration implements Persistable<UUID> {
     @Column(name = "captured_by", nullable = false, updatable = false)
     private String capturedBy;
 
+    /** Self-service only: the TransitHub user who applies and owns this application (SS-1). */
+    @Column(name = "applicant_user_id", updatable = false)
+    private @Nullable UUID applicantUserId;
+
     /** Increases on every material change; acknowledgements refer to it (AC-R1-ACK-03). */
     @Column(name = "content_revision", nullable = false)
     private int contentRevision;
@@ -152,6 +156,30 @@ public class CompanyRegistration implements Persistable<UUID> {
         registration.pendingStatusChanges.add(new RegistrationHistory.StatusChange(
                 id, null, RegistrationStatus.DRAFT, actor, null, now));
         return registration;
+    }
+
+    /**
+     * Self-service (Release 1 §9, SS-1): the applicant starts their own application.
+     * They are its capturer and its owner.
+     */
+    public static CompanyRegistration startApplication(
+            UUID id, String reference, CompanyDetails details, UUID applicantUserId, Instant now) {
+        CompanyRegistration registration = startDraft(id, reference, RegistrationChannel.SELF_SERVICE, details,
+                Objects.requireNonNull(applicantUserId, "applicantUserId").toString(), now);
+        registration.applicantUserId = applicantUserId;
+        return registration;
+    }
+
+    /**
+     * SS-9: the applicant takes a submitted application back to correct it, which is
+     * possible only while no Compliance Officer has started checking it. The submitted
+     * version stays on record; submitting again stores a new one.
+     */
+    public void returnToDraft(String actor, Instant now) {
+        if (status != RegistrationStatus.SUBMITTED || assignedVerifier != null) {
+            throw new InvalidRegistrationStateException("take back", status);
+        }
+        changeStatus(RegistrationStatus.DRAFT, actor, "Taken back by the applicant to make corrections", now);
     }
 
     /** Correct or complete the company details of a draft (AC-R1-CAP-05). */
@@ -696,6 +724,10 @@ public class CompanyRegistration implements Persistable<UUID> {
 
     public RegistrationChannel getChannel() {
         return channel;
+    }
+
+    public @Nullable UUID getApplicantUserId() {
+        return applicantUserId;
     }
 
     public String getCapturedBy() {

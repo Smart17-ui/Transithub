@@ -42,6 +42,16 @@ class OnboardingExceptionHandler {
                 : problem(HttpStatus.NOT_FOUND, "Invitation not valid", exception.getMessage(), INVITATION_INVALID);
     }
 
+    static final String APPLICATION_ALREADY_OPEN = "application-already-open";
+
+    @ExceptionHandler(com.transithub.onboarding.domain.exception.ApplicationAlreadyOpenException.class)
+    ProblemDetail applicationAlreadyOpen(com.transithub.onboarding.domain.exception.ApplicationAlreadyOpenException exception) {
+        ProblemDetail body = problem(HttpStatus.CONFLICT, "Application already in progress", exception.getMessage(),
+                APPLICATION_ALREADY_OPEN);
+        body.setProperty("applicationId", exception.openApplicationId());
+        return body;
+    }
+
     @ExceptionHandler(UserProvisioning.AccountDisabledException.class)
     ProblemDetail accountDisabled(UserProvisioning.AccountDisabledException exception) {
         return problem(HttpStatus.FORBIDDEN, "Account disabled", exception.getMessage(), ProblemCodes.ACCESS_DENIED);

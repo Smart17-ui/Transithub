@@ -12,6 +12,8 @@ import com.transithub.identity.Authorization;
 import com.transithub.identity.Permission;
 import com.transithub.identity.Principal;
 import com.transithub.identity.StaffDirectory;
+import com.transithub.shared.tenancy.TenantContext;
+import com.transithub.shared.tenancy.TenantScope;
 
 /**
  * The signed-in user as the UI needs them: name, roles, and the permissions
@@ -43,7 +45,10 @@ class MeController {
     Me me() {
         return principals.current()
                 .map(principal -> new Me(true, principal.userId(),
-                        staff.displayNames(List.of(principal.userId().toString())).get(principal.userId().toString()),
+                        // Own row only. Read in platform scope because a user without any
+                        // assignment (an applicant) has no tenant scope that row-level security would show it in.
+                        TenantContext.callAs(TenantScope.platform(), () -> staff.displayNames(
+                                List.of(principal.userId().toString())).get(principal.userId().toString())),
                         principal.active(),
                         roleNames(principal),
                         Arrays.stream(Permission.values()).filter(authorization::has).map(Permission::code).toList()))

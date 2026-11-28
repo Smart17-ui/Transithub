@@ -64,7 +64,7 @@ public class Authorization {
         return switch (scope.kind()) {
             case PLATFORM -> assignment.isPlatform();
             case COMPANY -> scope.companyId().equals(assignment.companyId());
-            case NONE -> false;
+            case NONE, APPLICANT -> false;
         };
     }
 }

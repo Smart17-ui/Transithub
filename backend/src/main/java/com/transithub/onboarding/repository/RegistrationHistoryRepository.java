@@ -57,6 +57,26 @@ public class RegistrationHistoryRepository {
         }
     }
 
+    /** Every status change of a registration, oldest first. */
+    public List<RegistrationHistory.StatusChange> statusChanges(UUID registrationId) {
+        return jdbc.sql("""
+                SELECT registration_id, from_status, to_status, actor_id, reason, occurred_at
+                  FROM registration_status_history
+                 WHERE registration_id = :id
+                 ORDER BY occurred_at, id
+                """)
+                .param("id", registrationId)
+                .query((rs, n) -> new RegistrationHistory.StatusChange(
+                        rs.getObject("registration_id", UUID.class),
+                        rs.getString("from_status") == null ? null
+                                : com.transithub.onboarding.domain.RegistrationStatus.valueOf(rs.getString("from_status")),
+                        com.transithub.onboarding.domain.RegistrationStatus.valueOf(rs.getString("to_status")),
+                        rs.getString("actor_id"),
+                        rs.getString("reason"),
+                        rs.getTimestamp("occurred_at").toInstant()))
+                .list();
+    }
+
     public List<RegistrationHistory.FieldChange> fieldChanges(UUID registrationId) {
         return jdbc.sql("""
                 SELECT registration_id, field, old_value, new_value, material, changed_by, changed_at

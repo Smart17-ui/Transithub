@@ -136,3 +136,15 @@
 - 10 findings (6 important, 4 minor), all confirmed and fixed, each with a regression test (`ReviewFindingsRegressionTest`, `RegistrationSyncServiceTest`). 183 tests.
 **Labels:** `quality`
 - Before merging each step, run an independent review pass (for example `/code-review`) and fix confirmed findings.
+
+### #4 addendum (28 Nov 2026, decision SS-15)
+- When an administrator sets up a staff member whose email already has a self-created account, **reuse that account** and grant the role (audited). Never create a second login for the same email.
+
+### #18 Clean up unused applicant accounts (decision SS-16)
+**Labels:** `backend`
+- A scheduled job finds accounts with no roles and no application: warning email at 75 days, deletion (TransitHub record and sign-in account) at 90 days, audited.
+- **Done when:** no unused applicant account is kept longer than 90 days.
+
+### #19 Close my account (decision SS-14)
+**Labels:** `backend`, `frontend`
+- An applicant with no application can close their own account. Until then, "Ask us to close it" goes through the Contact page.

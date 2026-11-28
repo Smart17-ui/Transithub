@@ -28,6 +28,9 @@ public interface CompanyRegistrationRepository extends JpaRepository<CompanyRegi
     @EntityGraph(attributePaths = {"representatives", "evidence", "acknowledgements"})
     Optional<CompanyRegistration> findAggregateById(UUID id);
 
+    /** Self-service: the applicant's own applications, newest first (SS-1, SS-12). */
+    java.util.List<CompanyRegistration> findByApplicantUserIdOrderByCreatedAtDesc(UUID applicantUserId);
+
     /** One row of a work queue: enough to pick the registration, not the whole aggregate. */
     record ListItem(UUID id, String reference, RegistrationStatus status, @Nullable String legalName,
                     @Nullable String district, String capturedBy, @Nullable String assignedVerifier,
