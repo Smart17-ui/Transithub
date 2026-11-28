@@ -182,3 +182,9 @@ Independent review (high) of everything since the first review: 8 important and 
 7. Contact-form rate limiter made thread-safe.
 8. Adding someone whose account is disabled explains what to do (422), not 500.
 9. Missing role in a role request is a 400; Javadoc order in `DecisionService`.
+
+### #18 and #19 done (28 Nov 2026)
+- **#19 (SS-14):** `DELETE /api/v1/me/account` closes the signed-in person's own account; "Close your account" on the applicant home, shown only while there is no application. Refused (409 `account-in-use`) if the account has ever had an application or a role.
+- **#18 (SS-16):** a daily job (02:30 Zambia time, `transithub.accounts.cleanup-enabled`) emails a warning at 75 days and closes the account at 90 days, never less than 14 days after the warning. An application started meanwhile keeps the account; if the sign-in service is down, that account is retried the next day.
+- Closing deletes the sign-in account at Keycloak (inside the transaction, so a failure changes nothing) and erases the name, email and sign-in link (V19: status `CLOSED`). The anonymous row stays because the application has no delete rights. Audited as `user.account-closed`.
+- Tests: `AccountClosureIntegrationTest` (8).

@@ -140,6 +140,8 @@ Create a realm `staff`, a client `transithub-backoffice`, and a user. Set `TRANS
 
 After changing files in `keycloak-theme/`, run the script again to copy them into Keycloak.
 
+Note (Keycloak 26.8): with **Verify email** on, the Create account form has **no password fields** by design. The person chooses a password right after clicking the confirmation link. This is not a fault.
+
 #### Staff management (TransitHub manages sign-in accounts)
 
 Platform Administrators add staff, give and remove roles, and disable accounts from the **Staff** page. TransitHub does this through a Keycloak service account that may only manage the staff realm's users:
@@ -148,7 +150,7 @@ Platform Administrators add staff, give and remove roles, and disable accounts f
 powershell -ExecutionPolicy Bypass -File scripts\keycloak\setup-dev-admin-api.ps1
 ```
 
-It creates the confidential client `transithub-admin-api` (once), gives its service account `manage-users`, `view-users` and `query-users`, and stores the secret in your Windows user environment as `TRANSITHUB_IDP_ADMIN_CLIENT_SECRET`. Restart the backend in a new window afterwards. Without the secret, staff management answers 503 `identity-provider-unavailable`. Set-up emails for new staff arrive in Mailpit.
+It creates the confidential client `transithub-admin-api` (once), gives its service account `manage-users`, `view-users` and `query-users`, and stores the secret in your Windows user environment as `TRANSITHUB_IDP_ADMIN_CLIENT_SECRET`. Restart the backend in a new window afterwards. Without the secret, staff management answers 503 `identity-provider-unavailable`. Keycloak 26.8+ only accepts admin calls from tokens with the `kc-admin-api` scope (Admin API audience); the script creates that client scope and attaches it. Set-up emails for new staff arrive in Mailpit.
 
 ---
 

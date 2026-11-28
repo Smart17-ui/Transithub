@@ -258,6 +258,7 @@ export const api = {
   me: (token: string) => request<Me>('/api/v1/me', token),
   /** Self-service sign-up: makes a newly signed-up person a TransitHub user (no roles). Safe to repeat. */
   createAccount: (token: string) => post<{ userId: string; created: boolean }>('/api/v1/me/account', token, {}),
+  closeAccount: async (token: string) => { await send('/api/v1/me/account', token, { method: 'DELETE' }) },
   staffNames: (token: string, ids: string[]) => {
     const params = new URLSearchParams()
     ids.forEach((id) => params.append('ids', id))

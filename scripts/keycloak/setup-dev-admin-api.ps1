@@ -28,8 +28,13 @@ function Invoke-Kc([string]$Arguments) {
 }
 
 # 1. Sign in to the admin API (asks for the password; it is not stored) -----------
-& $kcadm config credentials --server $Server --realm master --user $AdminUser
-if ($LASTEXITCODE -ne 0) { throw 'Could not sign in to Keycloak as administrator.' }
+# Sign in to the admin API. The password is asked here (paste with right-click works;
+# stars show as you type) and handed to kcadm only for this sign-in; it is not stored.
+$secure = Read-Host -AsSecureString "Keycloak admin password (user '$AdminUser')"
+$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+& $kcadm config credentials --server $Server --realm master --user $AdminUser --password $plain
+$plain = $null
+if ($LASTEXITCODE -ne 0) { throw 'Could not sign in to Keycloak as administrator. Check the password in transithub-dev-logins.txt (line "Keycloak admin console").' }
 
 # 2. The client --------------------------------------------------------------------
 $found = Invoke-Kc "get clients -r $Realm -q clientId=$ClientId --fields id" | ConvertFrom-Json
@@ -45,6 +50,40 @@ $id = @($found)[0].id
 # 3. Its service account may manage this realm's users, nothing else ------------------
 Write-Host 'Giving the service account: manage-users, view-users, query-users'
 Invoke-Kc "add-roles -r $Realm --uusername service-account-$ClientId --cclientid realm-management --rolename manage-users --rolename view-users --rolename query-users" | Out-Null
+
+# 3b. Keycloak 26.8+: admin tokens must carry the "kc-admin-api" scope, which adds the
+#     Admin API audience; without it every admin call is refused with 401.
+$scopes = Invoke-Kc "get client-scopes -r $Realm --fields id,name" | ConvertFrom-Json
+$adminScope = @($scopes) | Where-Object { $_.name -eq 'kc-admin-api' } | Select-Object -First 1
+if (-not $adminScope) {
+    Write-Host "Creating client scope 'kc-admin-api' (Admin API audience)"
+    $json = Join-Path $env:TEMP 'transithub-kc-admin-scope.json'
+    @'
+{
+  "name": "kc-admin-api",
+  "protocol": "openid-connect",
+  "description": "Admin REST API audience (needed by Keycloak 26.8+ for admin calls)",
+  "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" },
+  "protocolMappers": [ {
+    "name": "admin api audience",
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-admin-api-audience-mapper",
+    "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+  } ]
+}
+'@ | Set-Content -Encoding ascii $json
+    Invoke-Kc "create client-scopes -r $Realm -f `"$json`"" | Out-Null
+    Remove-Item $json -ErrorAction SilentlyContinue
+    $adminScope = @(Invoke-Kc "get client-scopes -r $Realm --fields id,name" | ConvertFrom-Json) | Where-Object { $_.name -eq 'kc-admin-api' } | Select-Object -First 1
+}
+Write-Host "Attaching 'kc-admin-api' to '$ClientId'"
+& cmd /c "`"$kcadm`" update clients/$id/default-client-scopes/$($adminScope.id) -r $Realm 2>nul" | Out-Null
+
+# Not needed (an earlier experiment): keep the client on plain client-credentials tokens.
+$plainJson = Join-Path $env:TEMP 'transithub-kc-client.json'
+'{"attributes":{"client_credentials.use_refresh_token":"false"}}' | Set-Content -Encoding ascii $plainJson
+& cmd /c "`"$kcadm`" update clients/$id -r $Realm -f `"$plainJson`" 2>nul" | Out-Null
+Remove-Item $plainJson -ErrorAction SilentlyContinue
 
 # 4. Its secret, into your user environment --------------------------------------------
 $secret = (Invoke-Kc "get clients/$id/client-secret -r $Realm" | ConvertFrom-Json).value

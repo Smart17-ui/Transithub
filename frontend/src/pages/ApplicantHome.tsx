@@ -1,5 +1,7 @@
-import { Anchor, Badge, Button, Group, Paper, Text, Title } from '@mantine/core'
+import { Anchor, Badge, Button, Group, Modal, Paper, Text, Title } from '@mantine/core'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { userManager } from '../auth/oidc'
 import { Link, useNavigate } from 'react-router'
 import { ApiProblem, api } from '../api/client'
 import type { ApplicationSummary, RegistrationStatus } from '../api/types'
@@ -18,6 +20,16 @@ const closed = (s: RegistrationStatus) => s === 'APPROVED' || s === 'REJECTED' |
 
 export function ApplicantHome({ token, name, emailNotConfirmed }: { token: string; name: string | null; emailNotConfirmed: boolean }) {
   const navigate = useNavigate()
+  const [confirmClose, setConfirmClose] = useState(false)
+  const closeAccount = useMutation({
+    mutationFn: () => api.closeAccount(token),
+    // The sign-in account no longer exists, so there is no session to end at the
+    // sign-in service: forget it locally and return to the public home page.
+    onSuccess: async () => {
+      await userManager.removeUser()
+      window.location.assign('/')
+    },
+  })
   const applications = useQuery({ queryKey: ['my-applications'], queryFn: () => api.myApplications(token), enabled: !emailNotConfirmed })
   const start = useMutation({
     mutationFn: () => api.startApplication(token),
@@ -94,10 +106,29 @@ export function ApplicantHome({ token, name, emailNotConfirmed }: { token: strin
           there is nothing else you need to do.
         </Text>
         <Text size="sm" c="dimmed" mt={6}>
-          Created this account by mistake? <Anchor component={Link} to="/contact">Ask us to close it</Anchor>. Accounts with
-          no application are closed automatically after 90 days.
+          Created this account by mistake?{' '}
+          {list.length === 0 && !applications.isPending
+            ? <Anchor component="button" type="button" size="sm" onClick={() => setConfirmClose(true)}>Close your account</Anchor>
+            : <Anchor component={Link} to="/contact">Ask us to close it</Anchor>}
+          . Accounts with no application are closed automatically after 90 days.
         </Text>
       </div>
+
+      {/* SS-14 (#19): only offered while there is no application; the server checks again. */}
+      <Modal opened={confirmClose} onClose={() => setConfirmClose(false)} centered radius="lg"
+        title={<Text fw={700}>Close your account?</Text>}>
+        <Text size="sm">
+          We will delete your sign-in and remove your name and email address from TransitHub. You can't undo this,
+          but you can create a new account at any time.
+        </Text>
+        {closeAccount.error && <ApiError error={closeAccount.error} />}
+        <Group justify="flex-end" mt="lg">
+          <Button variant="default" radius="xl" onClick={() => setConfirmClose(false)}>Keep my account</Button>
+          <Button color="red" radius="xl" loading={closeAccount.isPending} onClick={() => closeAccount.mutate()}>
+            Close my account
+          </Button>
+        </Group>
+      </Modal>
     </div>
   )
 }

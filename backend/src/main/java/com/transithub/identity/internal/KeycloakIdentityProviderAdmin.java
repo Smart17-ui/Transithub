@@ -90,7 +90,9 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
         call(() -> http.put()
                 .uri(users().pathSegment(subject, "execute-actions-email")
                         .queryParam("client_id", appClientId)
-                        .queryParam("redirect_uri", appUrl)
+                        // The app's registered sign-in return address: after the set-up steps the
+                        // person lands there and is signed in to TransitHub.
+                        .queryParam("redirect_uri", appUrl.replaceAll("/+$", "") + "/auth/callback")
                         .queryParam("lifespan", 72 * 3600)
                         .build().toUri())
                 .headers(h -> h.setBearerAuth(token()))
@@ -120,6 +122,22 @@ class KeycloakIdentityProviderAdmin implements IdentityProviderAdmin {
             actions.add("CONFIGURE_TOTP");
             user.put("requiredActions", actions);
             putUser(subject, user);
+        }
+    }
+
+    @Override
+    public void deleteUser(String subject) {
+        try {
+            call(() -> http.delete()
+                    .uri(users().pathSegment(subject).build().toUri())
+                    .headers(h -> h.setBearerAuth(token()))
+                    .retrieve()
+                    .toBodilessEntity());
+        } catch (UnavailableException e) {
+            if (e.getCause() instanceof org.springframework.web.client.HttpClientErrorException.NotFound) {
+                return; // already gone
+            }
+            throw e;
         }
     }
 

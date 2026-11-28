@@ -38,8 +38,13 @@ if ($isNew) {
 }
 
 # 2. Sign in to the admin API (asks for the password) --------------------------
-& $kcadm config credentials --server $Server --realm master --user $AdminUser
-if ($LASTEXITCODE -ne 0) { throw 'Could not sign in to Keycloak as administrator.' }
+# Sign in to the admin API. The password is asked here (paste with right-click works;
+# stars show as you type) and handed to kcadm only for this sign-in; it is not stored.
+$secure = Read-Host -AsSecureString "Keycloak admin password (user '$AdminUser')"
+$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+& $kcadm config credentials --server $Server --realm master --user $AdminUser --password $plain
+$plain = $null
+if ($LASTEXITCODE -ne 0) { throw 'Could not sign in to Keycloak as administrator. Check the password in transithub-dev-logins.txt (line "Keycloak admin console").' }
 
 # 3. Realm settings ----------------------------------------------------------
 Write-Host "Updating realm '$Realm'"

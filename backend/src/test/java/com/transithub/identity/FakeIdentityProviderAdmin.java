@@ -68,6 +68,21 @@ public class FakeIdentityProviderAdmin implements IdentityProviderAdmin {
         authenticatorRequiredFor.add(subject);
     }
 
+    public final List<String> deleted = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Subjects whose deletion fails as if the sign-in service were down. */
+    public final java.util.Set<String> failDeletionOf = ConcurrentHashMap.newKeySet();
+
+    @Override
+    public void deleteUser(String subject) {
+        if (failDeletionOf.contains(subject)) {
+            throw new UnavailableException("The sign-in service could not complete the request.");
+        }
+        bySubject.remove(subject);
+        withPassword.remove(subject);
+        deleted.add(subject);
+    }
+
     List<String> subjects() {
         return new ArrayList<>(bySubject.keySet());
     }

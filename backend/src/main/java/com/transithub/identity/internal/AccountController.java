@@ -12,9 +12,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.transithub.identity.IdentityProviderAdmin;
 import com.transithub.identity.UserProvisioning;
 import com.transithub.shared.audit.AuditRecorder;
 import com.transithub.shared.tenancy.TenantContext;
@@ -36,6 +38,7 @@ import com.transithub.shared.web.ProblemCodes;
 class AccountController {
 
     static final String EMAIL_NOT_VERIFIED = "email-not-verified";
+    static final String ACCOUNT_IN_USE = "account-in-use";
 
     record Account(UUID userId, boolean created) {
     }
@@ -44,13 +47,15 @@ class AccountController {
     private final AuditRecorder audit;
     private final TransactionTemplate transactions;
     private final PrincipalResolver principals;
+    private final AccountClosureService closures;
 
     AccountController(UserProvisioning users, AuditRecorder audit, TransactionTemplate transactions,
-                      PrincipalResolver principals) {
+                      PrincipalResolver principals, AccountClosureService closures) {
         this.users = users;
         this.audit = audit;
         this.transactions = transactions;
         this.principals = principals;
+        this.closures = closures;
     }
 
     @PostMapping("/api/v1/me/account")
@@ -81,6 +86,25 @@ class AccountController {
             return problem(HttpStatus.FORBIDDEN, "Account disabled",
                     "This account has been disabled. Contact TransitHub if you think this is a mistake.",
                     ProblemCodes.ACCESS_DENIED);
+        }
+    }
+
+    /**
+     * SS-14 (backlog #19): the person closes their own account. Allowed only while it has
+     * no application and has never held a role; the sign-in account is deleted and the
+     * name and email are erased here.
+     */
+    @DeleteMapping("/api/v1/me/account")
+    ResponseEntity<?> closeAccount() {
+        try {
+            closures.closeOwn(currentToken().getSubject());
+            return ResponseEntity.noContent().build();
+        } catch (AccountClosureService.AccountInUseException inUse) {
+            return problem(HttpStatus.CONFLICT, "Account can't be closed here", inUse.getMessage(), ACCOUNT_IN_USE);
+        } catch (IdentityProviderAdmin.UnavailableException unavailable) {
+            return problem(HttpStatus.SERVICE_UNAVAILABLE, "Sign-in service unavailable",
+                    "We couldn't close your account just now. Nothing was changed; please try again later.",
+                    StaffManagementController.IDENTITY_PROVIDER_UNAVAILABLE);
         }
     }
 

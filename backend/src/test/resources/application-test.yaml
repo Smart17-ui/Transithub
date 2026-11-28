@@ -28,6 +28,9 @@ transithub:
   enquiry:
     # All test requests share one address; the limiter has its own unit test.
     max-per-window: 100000
+  accounts:
+    # Tests call the account clean-up directly.
+    cleanup-enabled: false
   notifications:
     # Tests call the dispatcher directly; no background sending.
     dispatch-enabled: false

@@ -42,6 +42,12 @@ public interface IdentityProviderAdmin {
     /** SS-6: the person must set up an authenticator app at their next sign-in, unless they already have one. */
     void requireAuthenticator(String subject);
 
+    /**
+     * Deletes the sign-in account for good (closing an unused applicant account, SS-14 and
+     * SS-16). An account that no longer exists counts as deleted, so a retry is harmless.
+     */
+    void deleteUser(String subject);
+
     /** The identity provider could not be reached, or TransitHub is not connected to it. */
     class UnavailableException extends RuntimeException {
         public UnavailableException(String message, Throwable cause) {

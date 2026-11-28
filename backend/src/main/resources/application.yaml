@@ -71,6 +71,11 @@ transithub:
     team:
       support: ${TRANSITHUB_SUPPORT_EMAIL:support@transithub.local}
 
+  accounts:
+    # SS-16 (#18): daily at 02:30 Zambia time, warn unused applicant accounts at 75 days
+    # and close them at 90 days (at least 14 days after the warning).
+    cleanup-enabled: ${TRANSITHUB_ACCOUNT_CLEANUP_ENABLED:true}
+
   storage:
     # Encrypted file storage for evidence and signatures (R-17, ADR-0017).
     root: ${TRANSITHUB_STORAGE_ROOT:./data/files}

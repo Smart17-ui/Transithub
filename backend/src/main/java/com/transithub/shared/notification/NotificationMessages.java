@@ -75,6 +75,14 @@ final class NotificationMessages {
                                 + "\n\nThe link works once and expires on " + day(text(p, "expiresAt")) + "." + signOff,
                         "TransitHub: set up " + text(p, "companyName") + ". Open " + link);
             }
+            case "account.unused-warning" -> new Message(
+                    "Your TransitHub account will be closed on " + day(text(p, "closesOn")),
+                    hello + "You created a TransitHub account but have not started an application for a bus company.\n\n"
+                            + "To protect your personal data, we close accounts that are not used. Yours will be closed on "
+                            + day(text(p, "closesOn")) + ".\n\nTo keep it, sign in and start your application: " + app
+                            + "\n\nIf you don't need the account, you don't have to do anything." + signOff,
+                    "TransitHub: your unused account will be closed on " + day(text(p, "closesOn"))
+                            + ". To keep it, sign in and start an application: " + app);
             default -> new Message("Update from TransitHub",
                     hello + "There is an update for you in TransitHub: " + app + signOff,
                     "TransitHub: there is an update for you. " + app);

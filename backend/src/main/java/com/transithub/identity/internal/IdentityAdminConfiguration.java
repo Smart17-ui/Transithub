@@ -73,5 +73,10 @@ class IdentityAdminConfiguration {
         public void requireAuthenticator(String subject) {
             throw missing();
         }
+
+        @Override
+        public void deleteUser(String subject) {
+            throw missing();
+        }
     }
 }

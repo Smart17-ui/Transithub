@@ -86,6 +86,9 @@ export function ApiError({ error, onReload }: { error: Error; onReload?: () => v
   if (problem?.code === 'concurrent-modification' || problem?.status === 409) {
     title = 'This application was updated by someone else'
     hint = 'Reload to see the latest version, then try again.'
+  } else if (problem?.code === 'identity-provider-unavailable') {
+    title = 'The sign-in service could not complete this'
+    hint = 'Nothing was changed. Please try again in a moment; if it keeps happening, tell your technical team.'
   } else if (problem?.code === 'verification-incomplete') {
     title = 'Not ready to approve yet'
   } else if (problem?.code === 'separation-of-duties') {
@@ -100,7 +103,8 @@ export function ApiError({ error, onReload }: { error: Error; onReload?: () => v
   }
   // No TransitHub answer at all: the network failed, the server is down, or
   // something else answered (a 404 without our problem code).
-  const unreachable = !problem || problem.status >= 502 || (problem.status === 404 && !problem.code)
+  // Only when TransitHub gave no explanation of its own (no problem code).
+  const unreachable = !problem || (!problem.code && (problem.status >= 502 || problem.status === 404))
   if (unreachable) {
     title = 'We can’t reach the TransitHub server right now'
     hint = 'Please try again in a moment.'
