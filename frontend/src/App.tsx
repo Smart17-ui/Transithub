@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppShell, Button, Container, Group, Text } from '@mantine/core'
-import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router'
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { User } from 'oidc-client-ts'
 import { userManager } from './auth/oidc'
 import { Logo } from './brand/Logo'
@@ -40,9 +40,13 @@ function App() {
     }
   }, [])
 
+  // Goes straight to the sign-in service. "replace" keeps the /sign-in hop out of
+  // the history, so Back from the sign-in service returns to the page before it.
   async function signIn() {
     setAuthError('')
-    try { await userManager.signinRedirect() }
+    const here = window.location.pathname
+    const returnTo = here === '/sign-in' || here === '/auth/callback' ? '/' : here + window.location.search
+    try { await userManager.signinRedirect({ redirectMethod: 'replace', state: { returnTo } }) }
     catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to start sign-in.') }
   }
 
@@ -92,6 +96,7 @@ function App() {
       <AppShell.Main>
         <Container size="xl" className="page-shell">
           <ScrollToLocation />
+          <PageTitle signedIn={!!user} />
           <Routes>
             <Route path="/auth/callback" element={<AuthCallback onSignedIn={setUser} />} />
             <Route path="/" element={user ? <QueuePage token={user.access_token} /> : <LandingPage />} />
@@ -112,6 +117,29 @@ function App() {
   )
 }
 
+/** Names the browser tab after the page: the public site for visitors, the workspace for staff. */
+function PageTitle({ signedIn }: { signedIn: boolean }) {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    const publicTitles: Record<string, string> = {
+      '/': 'Bus travel in Zambia, made simple',
+      '/services': 'Services',
+      '/about': 'About us',
+      '/contact': 'Contact us',
+      '/register': 'Register your bus company',
+      '/sign-in': 'Sign in',
+    }
+    const staffTitle = pathname === '/' ? 'Work queue'
+      : pathname === '/enquiries' ? 'Enquiries'
+      : pathname === '/registrations/new' ? 'New registration'
+      : pathname.startsWith('/registrations/') ? 'Registration'
+      : undefined
+    const page = signedIn ? staffTitle ?? publicTitles[pathname] : publicTitles[pathname] ?? 'Sign in'
+    document.title = page ? `TransitHub · ${page}` : 'TransitHub'
+  }, [pathname, signedIn])
+  return null
+}
+
 function initials(name: string | undefined) {
   return (name ?? '?').split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('') || '?'
 }
@@ -125,7 +153,8 @@ function AuthCallback({ onSignedIn }: { onSignedIn: (user: User) => void }) {
     handled.current = true
     userManager.signinRedirectCallback().then((user) => {
       onSignedIn(user)
-      navigate('/', { replace: true })
+      const returnTo = (user.state as { returnTo?: string } | undefined)?.returnTo
+      navigate(returnTo?.startsWith('/') ? returnTo : '/', { replace: true })
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Sign-in could not be completed.'))
   }, [navigate, onSignedIn])
   return <CenterMessage title={error ? 'Sign-in failed' : 'Signing you in'} detail={error || 'Returning to your workspace…'} />

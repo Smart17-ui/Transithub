@@ -305,6 +305,7 @@ html:root[data-mantine-color-scheme='dark'] .site-footer { background: #0B1222; 
 .staff-signin-main { padding: 44px 40px; }
 .staff-signin-title { margin-top: 18px; color: var(--ink); font: 700 28px/1.2 'Inter Variable', 'Segoe UI', sans-serif; letter-spacing: -.6px; }
 .staff-signin-error { text-align: left; }
+.staff-signin-redirect { display: grid; justify-items: center; text-align: center; }
 .staff-signin-note { margin-top: 28px; padding: 14px 16px; border-radius: 14px; background: var(--tint-teal); }
 .staff-signin-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 @media (max-width: 760px) {

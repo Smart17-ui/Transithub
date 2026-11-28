@@ -1,4 +1,5 @@
-import { Alert, Anchor, Button, Paper, Text, Title } from '@mantine/core'
+import { useEffect, useRef } from 'react'
+import { Alert, Anchor, Button, Loader, Paper, Text, Title } from '@mantine/core'
 import { Link } from 'react-router'
 import { LogoMark } from '../brand/Logo'
 import { IconBuilding, IconShield, IconTicket } from './LandingPage'
@@ -10,6 +11,26 @@ import { IconBuilding, IconShield, IconTicket } from './LandingPage'
  * phone number from the booking pages (BP-03 decision J).
  */
 export function SignInPage({ loading, error, onSignIn }: { loading: boolean; error?: string; onSignIn: () => void }) {
+  // Visitors go straight to the sign-in service; this page only shows itself
+  // when that service cannot be reached, so there is never a second sign-in screen.
+  const started = useRef(false)
+  useEffect(() => {
+    if (loading || error || started.current) return
+    started.current = true
+    onSignIn()
+  }, [loading, error, onSignIn])
+
+  if (!error) {
+    return (
+      <div className="staff-signin" aria-live="polite">
+        <div className="staff-signin-redirect">
+          <Loader color="teal" />
+          <Text c="dimmed" mt="md">Taking you to TransitHub sign-in…</Text>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="staff-signin">
       <Paper className="staff-signin-card" radius="xl">

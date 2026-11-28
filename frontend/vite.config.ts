@@ -9,6 +9,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // Sign-in only accepts http://localhost:5173, so never drift to 5174:
+    // fail loudly instead when a dev server is already running.
+    strictPort: true,
     proxy: {
       '/api': apiTarget,
       '/v3': apiTarget,
