@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.transithub.identity.Authorization;
 import com.transithub.identity.Permission;
+import com.transithub.identity.Role;
+import com.transithub.identity.UserProvisioning;
 import com.transithub.onboarding.domain.Company;
 import com.transithub.onboarding.domain.CompanyRegistration;
 import com.transithub.onboarding.domain.Representative;
@@ -52,13 +54,15 @@ public class DecisionService {
     private final AuditRecorder audit;
     private final NotificationOutbox notifications;
     private final InvitationService invitations;
+    private final UserProvisioning users;
     private final Clock clock;
     private final Duration appealWindow;
 
     DecisionService(RegistrationService registrations, CompanyRepository companies, DecisionRepository decisions,
                     VerificationRepository verification, VerificationService verificationService,
                     Authorization authorization, CurrentActor currentActor,
-                    AuditRecorder audit, NotificationOutbox notifications, InvitationService invitations, Clock clock,
+                    AuditRecorder audit, NotificationOutbox notifications, InvitationService invitations,
+                    UserProvisioning users, Clock clock,
                     @Value("${transithub.onboarding.appeal-window-days:30}") int appealWindowDays) {
         this.registrations = registrations;
         this.companies = companies;
@@ -70,6 +74,7 @@ public class DecisionService {
         this.audit = audit;
         this.notifications = notifications;
         this.invitations = invitations;
+        this.users = users;
         this.clock = clock;
         this.appealWindow = Duration.ofDays(appealWindowDays);
     }
@@ -101,8 +106,29 @@ public class DecisionService {
 
         notifyDecision(saved, "registration.approved",
                 Map.of("reference", saved.getReference(), "companyCode", savedCompany.getCompanyCode()));
-        invitations.issue(savedCompany, saved);   // AC-R1-EST-04, same transaction
+        if (saved.getApplicantUserId() != null) {
+            makeApplicantCompanyAdministrator(saved, savedCompany);
+        } else {
+            invitations.issue(savedCompany, saved);   // AC-R1-EST-04, same transaction
+        }
         return new Approved(saved, savedCompany);
+    }
+
+    /**
+     * SS-2: a self-service applicant needs no invitation. Their own account becomes the
+     * company's first Company Administrator and the company is active at once, in the
+     * same transaction as the approval.
+     */
+    private void makeApplicantCompanyAdministrator(CompanyRegistration registration, Company company) {
+        UUID applicant = registration.getApplicantUserId();
+        users.grantCompanyRole(applicant, Role.COMPANY_ADMINISTRATOR, company.getId(),
+                "approval:" + registration.getId());
+        company.activate();
+        companies.saveAndFlush(company);
+        users.requireAuthenticatorAfterCommit(applicant);   // SS-6: they now control a company
+        audit.record("company.activated", "Company", company.getId(), company.getId(),
+                "The applicant's own account became Company Administrator on approval",
+                Map.of("administratorUserId", applicant.toString(), "registrationId", registration.getId().toString()));
     }
 
     /** AC-R1-DEC-04: the checker rejects with reasons; the appeal window opens. */

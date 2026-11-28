@@ -138,6 +138,7 @@ public class InvitationService {
         UUID userId = users.ensureUser(subject, invitation.recipientName(), invitation.recipientEmail());
         users.grantCompanyRole(userId, Role.COMPANY_ADMINISTRATOR, invitation.companyId(),
                 "invitation:" + invitation.id());
+        users.requireAuthenticatorAfterCommit(userId);   // SS-6: they now control a company
         invitations.markAccepted(invitation.id(), userId, now);
 
         Company company = companies.findById(invitation.companyId())

@@ -56,6 +56,9 @@ class ApplicantApplicationIntegrationTest {
     @Autowired
     private JdbcClient jdbc;
 
+    @Autowired
+    private com.transithub.identity.FakeIdentityProviderAdmin identityProvider;
+
     @Test
     void anApplicantAppliesSubmitsTakesBackAndSubmitsAgain() throws Exception {
         Applicant banda = newApplicant("Mr Banda");
@@ -110,6 +113,79 @@ class ApplicantApplicationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("WITHDRAWN"))
                 .andExpect(jsonPath("$.allowedActions", hasItem("startNew")));
+    }
+
+    @Test
+    void theApplicantAnswersAnInformationRequestInTheirAccount() throws Exception {
+        Applicant banda = newApplicant("Mr Banda");
+        UUID id = complete(banda);
+        submit(banda, id);
+        TestUsers.TestUser ruth = new TestUsers(jdbc).platform(Role.VERIFICATION_OFFICER);
+        RegistrationFixtures fixtures = new RegistrationFixtures(mockMvc);
+        fixtures.command(ruth, id, "/verification/take", "{\"version\": %d}".formatted(fixtures.version(ruth, id)));
+        fixtures.command(ruth, id, "/information-requests", """
+                {"version": %d, "description": "The licence photo is blurry. Please upload a clearer copy.", "dueDate": "%s"}
+                """.formatted(fixtures.version(ruth, id), java.time.LocalDate.now().plusDays(7)));
+
+        // SS-8: the applicant sees what was asked, never who asked.
+        String waiting = mockMvc.perform(get(BASE + "/" + id).with(banda.token()))
+                .andExpect(jsonPath("$.status").value("AWAITING_INFORMATION"))
+                .andExpect(jsonPath("$.allowedActions", hasItem("respond")))
+                .andExpect(jsonPath("$.informationRequests[0].description").value("The licence photo is blurry. Please upload a clearer copy."))
+                .andExpect(jsonPath("$.informationRequests[0].requestedBy").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        String requestId = JsonPath.read(waiting, "$.informationRequests[0].id");
+
+        mockMvc.perform(multipart(BASE + "/" + id + "/information-requests/" + requestId + "/evidence")
+                        .file(new MockMultipartFile("file", "licence-clear.pdf", "application/pdf", PDF))
+                        .param("version", String.valueOf(version(banda, id)))
+                        .param("evidenceType", "OPERATING_LICENCE")
+                        .with(banda.token()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.informationRequests[0].documents[0].fileName").value("licence-clear.pdf"));
+
+        mockMvc.perform(post(BASE + "/" + id + "/information-requests/" + requestId + "/response").with(banda.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\": %d, \"response\": \"Clearer copy attached.\"}".formatted(version(banda, id))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UNDER_VERIFICATION"))
+                .andExpect(jsonPath("$.informationRequests[0].status").value("ANSWERED"));
+
+        // The Compliance Officer is told, and sees the new document on the application.
+        Long told = jdbc.sql("""
+                SELECT count(*) FROM notification_outbox
+                 WHERE recipient_user_id = :ruth AND template = 'registration.information-provided'
+                   AND parameters->>'requestId' = :request
+                """).param("ruth", ruth.id().toString()).param("request", requestId).query(Long.class).single();
+        assertThat(told).isEqualTo(1);
+        mockMvc.perform(get("/api/v1/registrations/" + id).with(ruth.token()))
+                .andExpect(jsonPath("$.evidence[*].fileName", hasItem("licence-clear.pdf")));
+    }
+
+    @Test
+    void onApprovalTheApplicantsOwnAccountBecomesCompanyAdministrator() throws Exception {
+        Applicant banda = newApplicant("Mr Banda");
+        UUID id = complete(banda);
+        submit(banda, id);
+
+        String approved = new RegistrationFixtures(mockMvc).approve(new TestUsers(jdbc), id);
+        UUID companyId = UUID.fromString(JsonPath.read(approved, "$.company.id"));
+
+        // SS-2: the same login, no invitation; the company is active at once.
+        mockMvc.perform(get("/api/v1/me").with(banda.token()))
+                .andExpect(jsonPath("$.roles", hasItem("COMPANY_ADMINISTRATOR")));
+        String status = jdbc.sql("SELECT operational_status FROM companies WHERE id = :id")
+                .param("id", companyId).query(String.class).single();
+        Long invitations = jdbc.sql("SELECT count(*) FROM company_invitation WHERE company_id = :id")
+                .param("id", companyId).query(Long.class).single();
+        assertThat(status).isEqualTo("ACTIVE");
+        assertThat(invitations).isZero();
+        // SS-6: they now control a company, so they must set up an authenticator.
+        assertThat(identityProvider.authenticatorRequiredFor).contains(banda.subject());
+        // Review 2: now a Company Administrator, he can still open his own application.
+        mockMvc.perform(get(BASE + "/" + id).with(banda.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
     }
 
     @Test

@@ -21,6 +21,28 @@ class SubmissionRateLimiterTest {
     };
 
     @Test
+    void manyAddressesAtOnceNeverFailAndEachStaysWithinItsLimit() throws Exception {
+        SubmissionRateLimiter limiter = new SubmissionRateLimiter(clock, 3, 10);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        java.util.concurrent.atomic.AtomicInteger allowedForShared = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.List<java.util.concurrent.Future<?>> work = new java.util.ArrayList<>();
+        for (int i = 0; i < 24_000; i++) {
+            int n = i;
+            work.add(pool.submit(() -> {
+                limiter.tryAcquire("address-" + n);              // grows past the clean-up threshold
+                if (n % 100 == 0 && limiter.tryAcquire("shared")) {
+                    allowedForShared.incrementAndGet();
+                }
+            }));
+        }
+        for (java.util.concurrent.Future<?> f : work) {
+            f.get();                                              // any exception inside fails the test
+        }
+        pool.shutdown();
+        org.junit.jupiter.api.Assertions.assertEquals(3, allowedForShared.get());
+    }
+
+    @Test
     void anAddressIsLimitedWithinTheWindowAndFreedAfterIt() {
         SubmissionRateLimiter limiter = new SubmissionRateLimiter(clock, 2, 10);
 

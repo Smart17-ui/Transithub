@@ -30,6 +30,8 @@ import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
 import com.transithub.onboarding.repository.CompanyRegistrationRepository;
 import com.transithub.onboarding.repository.RegistrationHistoryRepository;
 import com.transithub.onboarding.repository.RegistrationSubmissionRepository;
+import com.transithub.onboarding.repository.VerificationRepository;
+import com.transithub.shared.notification.NotificationOutbox;
 import com.transithub.shared.audit.AuditRecorder;
 import com.transithub.shared.id.UuidV7;
 import com.transithub.shared.storage.FileStorage;
@@ -57,6 +59,8 @@ public class ApplicantApplicationService {
     private final RegistrationHistoryRepository history;
     private final RegistrationSubmissionRepository submissions;
     private final RegistrationService registrationService;
+    private final VerificationRepository verification;
+    private final NotificationOutbox notifications;
     private final Authorization authorization;
     private final AuditRecorder audit;
     private final FileStorage storage;
@@ -65,25 +69,32 @@ public class ApplicantApplicationService {
     public ApplicantApplicationService(CompanyRegistrationRepository registrations,
                                        RegistrationHistoryRepository history,
                                        RegistrationSubmissionRepository submissions,
-                                       RegistrationService registrationService, Authorization authorization,
+                                       RegistrationService registrationService, VerificationRepository verification,
+                                       NotificationOutbox notifications, Authorization authorization,
                                        AuditRecorder audit, FileStorage storage, Clock clock) {
         this.registrations = registrations;
         this.history = history;
         this.submissions = submissions;
         this.registrationService = registrationService;
+        this.verification = verification;
+        this.notifications = notifications;
         this.authorization = authorization;
         this.audit = audit;
         this.storage = storage;
         this.clock = clock;
     }
 
-    /** An application with what the applicant may see of its history. */
-    public record ApplicationView(CompanyRegistration application, List<RegistrationHistory.StatusChange> timeline) {
+    /** An application with what the applicant may see of its history and of TransitHub's requests. */
+    public record ApplicationView(CompanyRegistration application, List<RegistrationHistory.StatusChange> timeline,
+                                  List<VerificationRepository.InformationRequest> informationRequests) {
     }
 
     /** SS-1: start an application. SS-11: only one open at a time. */
     public CompanyRegistration start(CompanyDetails details) {
         UUID applicant = applicant();
+        if (authorization.holdsAnyRole()) {
+            throw new AccessDeniedException("Staff and company accounts do not start applications here.");
+        }
         registrations.findByApplicantUserIdOrderByCreatedAtDesc(applicant).stream()
                 .filter(existing -> !isClosed(existing.getStatus()))
                 .findFirst()
@@ -114,7 +125,7 @@ public class ApplicantApplicationService {
     @Transactional(readOnly = true)
     public ApplicationView get(UUID id) {
         CompanyRegistration application = own(id);
-        return new ApplicationView(application, history.statusChanges(id));
+        return new ApplicationView(application, history.statusChanges(id), verification.informationRequests(id));
     }
 
     public CompanyRegistration updateDetails(UUID id, long expectedVersion, CompanyDetails details) {
@@ -250,6 +261,48 @@ public class ApplicantApplicationService {
         application.withdraw(actor(), reason, clock.instant());
         return registrationService.saveCommand(application, "registration.withdrawn", reason.trim(),
                 Map.of("withdrawnBy", "applicant"));
+    }
+
+    /**
+     * SS-8: a document the Compliance Officer asked for, attached to their request.
+     * Possible only while the request is open.
+     */
+    public CompanyRegistration attachRequestedEvidence(UUID id, long expectedVersion, UUID requestId, EvidenceType type,
+                                                       @Nullable String originalFileName, byte[] content) {
+        CompanyRegistration application = ownAt(id, expectedVersion);
+        verification.openInformationRequest(id, requestId)
+                .orElseThrow(() -> new RegistrationNotFoundException("Open information request", requestId));
+        application.checkCanAttachRequestedEvidence();
+        FileType fileType = RegistrationService.check(content, RegistrationService.MAX_EVIDENCE_BYTES,
+                FileType.PDF, FileType.JPEG, FileType.PNG);
+        String storageKey = storage.store(content);
+        Evidence item = application.attachRequestedEvidence(UuidV7.generate(), requestId, type,
+                new Evidence.StoredFile(RegistrationService.safeFileName(originalFileName, fileType), fileType.mediaType(),
+                        content.length, RegistrationService.sha256(content), storageKey),
+                actor(), clock.instant());
+        return registrationService.saveCommand(application, "registration.requested-evidence-attached",
+                Map.of("requestId", requestId.toString(), "evidenceId", item.getId().toString()));
+    }
+
+    /**
+     * SS-8: the applicant answers the open request. Checking resumes, and the assigned
+     * Compliance Officer is told that the information has arrived.
+     */
+    public CompanyRegistration respond(UUID id, long expectedVersion, UUID requestId, String response) {
+        CompanyRegistration application = ownAt(id, expectedVersion);
+        verification.openInformationRequest(id, requestId)
+                .orElseThrow(() -> new RegistrationNotFoundException("Open information request", requestId));
+        String actor = actor();
+        Instant now = clock.instant();
+        application.informationProvided(actor, now);
+        CompanyRegistration saved = registrationService.saveCommand(application, "registration.information-provided",
+                Map.of("requestId", requestId.toString(), "respondedBy", "applicant"));
+        verification.answer(requestId, response.trim(), actor, now);
+        if (saved.getAssignedVerifier() != null) {
+            notifications.enqueue(saved.getAssignedVerifier(), "registration.information-provided",
+                    Map.of("reference", saved.getReference(), "requestId", requestId.toString()), null);
+        }
+        return saved;
     }
 
     static boolean isClosed(RegistrationStatus status) {

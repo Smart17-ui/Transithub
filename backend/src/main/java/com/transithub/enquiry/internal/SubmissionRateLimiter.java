@@ -34,21 +34,32 @@ class SubmissionRateLimiter {
         this.window = Duration.ofMinutes(windowMinutes);
     }
 
+    /**
+     * Every read and change of an address's timestamps happens inside the map's
+     * per-key lock ({@code compute}), so concurrent requests can neither crash the
+     * clean-up nor lose each other's timestamps.
+     */
     boolean tryAcquire(String address) {
         Instant now = clock.instant();
+        Instant cutoff = now.minus(window);
         if (recent.size() > MAX_TRACKED_ADDRESSES) {
-            recent.values().removeIf(times -> times.isEmpty() || times.peekLast().isBefore(now.minus(window)));
+            for (String key : recent.keySet()) {
+                recent.computeIfPresent(key, (k, times) ->
+                        times.isEmpty() || times.peekLast().isBefore(cutoff) ? null : times);
+            }
         }
-        Deque<Instant> times = recent.computeIfAbsent(address, key -> new ArrayDeque<>());
-        synchronized (times) {
-            while (!times.isEmpty() && times.peekFirst().isBefore(now.minus(window))) {
+        boolean[] allowed = {false};
+        recent.compute(address, (key, existing) -> {
+            Deque<Instant> times = existing == null ? new ArrayDeque<>() : existing;
+            while (!times.isEmpty() && times.peekFirst().isBefore(cutoff)) {
                 times.pollFirst();
             }
-            if (times.size() >= maxPerWindow) {
-                return false;
+            if (times.size() < maxPerWindow) {
+                times.addLast(now);
+                allowed[0] = true;
             }
-            times.addLast(now);
-            return true;
-        }
+            return times;
+        });
+        return allowed[0];
     }
 }

@@ -36,9 +36,10 @@ class MeController {
     /**
      * @param registered false for a valid sign-in that TransitHub does not know yet
      *                   (for example someone about to accept an invitation)
+     * @param companyIds the companies the user holds a role in (Company Administrator, later company staff)
      */
     record Me(boolean registered, @Nullable UUID userId, @Nullable String displayName, boolean active,
-              List<String> roles, List<String> permissions) {
+              List<String> roles, List<String> permissions, List<UUID> companyIds) {
     }
 
     @GetMapping("/api/v1/me")
@@ -51,8 +52,10 @@ class MeController {
                                 List.of(principal.userId().toString())).get(principal.userId().toString())),
                         principal.active(),
                         roleNames(principal),
-                        Arrays.stream(Permission.values()).filter(authorization::has).map(Permission::code).toList()))
-                .orElseGet(() -> new Me(false, null, null, false, List.of(), List.of()));
+                        Arrays.stream(Permission.values()).filter(authorization::has).map(Permission::code).toList(),
+                        principal.assignments().stream().map(Principal.Assignment::companyId)
+                                .filter(java.util.Objects::nonNull).distinct().toList()))
+                .orElseGet(() -> new Me(false, null, null, false, List.of(), List.of(), List.of()));
     }
 
     static List<String> roleNames(Principal principal) {

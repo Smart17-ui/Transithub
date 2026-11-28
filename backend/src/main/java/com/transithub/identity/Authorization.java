@@ -55,6 +55,11 @@ public class Authorization {
         return principals.currentSubject();
     }
 
+    /** True if the signed-in user holds any role (staff, or a company role). */
+    public boolean holdsAnyRole() {
+        return principals.current().map(p -> !p.assignments().isEmpty()).orElse(false);
+    }
+
     /** The signed-in TransitHub user, if any. */
     public Optional<UUID> currentUserId() {
         return principals.current().map(Principal::userId);

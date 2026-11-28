@@ -28,12 +28,38 @@ public class UserProvisioning {
         }
     }
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(UserProvisioning.class);
+
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final IdentityProviderAdmin identityProvider;
 
-    UserProvisioning(JdbcClient jdbc, Clock clock) {
+    UserProvisioning(JdbcClient jdbc, Clock clock, IdentityProviderAdmin identityProvider) {
         this.jdbc = jdbc;
         this.clock = clock;
+        this.identityProvider = identityProvider;
+    }
+
+    /**
+     * SS-6: once the surrounding transaction commits, the person must set up an
+     * authenticator app at their next sign-in. If the sign-in service cannot be reached,
+     * the business change still stands; the failure is logged for an administrator.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void requireAuthenticatorAfterCommit(UUID userId) {
+        String subject = jdbc.sql("SELECT identity_subject FROM user_account WHERE id = :id")
+                .param("id", userId).query(String.class).single();
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        try {
+                            identityProvider.requireAuthenticator(subject);
+                        } catch (RuntimeException e) {
+                            log.warn("Could not require an authenticator for user {}: {}", userId, e.getMessage());
+                        }
+                    }
+                });
     }
 
     /**

@@ -47,6 +47,9 @@ class InvitationIntegrationTest {
     @Autowired
     private com.transithub.shared.storage.SecretSealer sealer;
 
+    @Autowired
+    private com.transithub.identity.FakeIdentityProviderAdmin identityProvider;
+
     private TestUsers users;
     private UUID companyId;
     private TestUsers.TestUser mrBanda;
@@ -101,6 +104,8 @@ class InvitationIntegrationTest {
                 .param("id", companyId).query(String.class).single());
         assertEquals(1, jdbc.sql("SELECT COUNT(*) FROM audit_event WHERE entity_id = :id AND action = 'company.activated'")
                 .param("id", companyId).query(Integer.class).single());
+        // SS-6 (review 2): controlling a company requires an authenticator, however one got there.
+        org.assertj.core.api.Assertions.assertThat(identityProvider.authenticatorRequiredFor).contains(mrBanda.subject());
     }
 
     @Test

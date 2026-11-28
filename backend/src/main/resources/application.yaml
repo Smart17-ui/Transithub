@@ -1,5 +1,11 @@
 
 spring:
+  mail:
+    # Development: Mailpit on this computer. Production: a provider that satisfies the data-protection answers (#3).
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
   application:
     name: transithub-backend
 
@@ -45,6 +51,25 @@ transithub:
       client-ids: ${OIDC_CLIENT_IDS:transithub-backoffice}
       # Optional; defaults to <issuer>/protocol/openid-connect/certs.
       jwk-set-uri: ${OIDC_JWK_SET_URI:}
+
+  identity:
+    admin:
+      # TransitHub's service account at the sign-in service, for staff management (#4)
+      # and the authenticator requirement (SS-6). Set up with
+      # scripts/keycloak/setup-dev-admin-api.ps1. Empty = not connected (503 on use).
+      client-id: ${TRANSITHUB_IDP_ADMIN_CLIENT_ID:transithub-admin-api}
+      client-secret: ${TRANSITHUB_IDP_ADMIN_CLIENT_SECRET:}
+      # Where the set-up email sends people once they are done.
+      app-client-id: ${TRANSITHUB_IDP_APP_CLIENT_ID:transithub-backoffice}
+      app-url: ${TRANSITHUB_APP_URL:http://localhost:5173/}
+
+  notifications:
+    # Sends the outbox every 15 seconds (backlog #13). Email over SMTP (spring.mail below);
+    # SMS is only logged until a provider is chosen (#3).
+    dispatch-enabled: ${TRANSITHUB_NOTIFICATIONS_ENABLED:true}
+    from: ${TRANSITHUB_MAIL_FROM:TransitHub <no-reply@transithub.local>}
+    team:
+      support: ${TRANSITHUB_SUPPORT_EMAIL:support@transithub.local}
 
   storage:
     # Encrypted file storage for evidence and signatures (R-17, ADR-0017).

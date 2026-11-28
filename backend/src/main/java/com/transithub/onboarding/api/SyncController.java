@@ -73,6 +73,41 @@ class SyncController {
         return conflicts.quarantine();
     }
 
+    record ReleaseAsDraftRequest(@jakarta.validation.constraints.NotNull UUID officerId,
+                                 @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 2000) String note) {
+    }
+
+    record CloseRequest(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 2000) String reason) {
+    }
+
+    /** #7a: who can continue a draft made from quarantined data. */
+    @GetMapping("/api/v1/sync/officers")
+    List<com.transithub.identity.StaffMember> officers() {
+        return conflicts.officers();
+    }
+
+    /** #7a: what the device sent, for the supervisor to read. */
+    @GetMapping("/api/v1/sync/quarantine/{quarantineId}")
+    com.transithub.onboarding.domain.DraftSnapshot quarantinedData(@PathVariable UUID quarantineId) {
+        return conflicts.quarantinedData(quarantineId);
+    }
+
+    /** #7a: turn it into a new draft for an active Onboarding Officer to continue. */
+    @PostMapping("/api/v1/sync/quarantine/{quarantineId}/draft")
+    org.springframework.http.ResponseEntity<RegistrationResponse> releaseAsDraft(
+            @PathVariable UUID quarantineId, @Valid @RequestBody ReleaseAsDraftRequest request) {
+        return org.springframework.http.ResponseEntity.status(201)
+                .body(responses.from(conflicts.releaseAsDraft(quarantineId, request.officerId(), request.note())));
+    }
+
+    /** #7a: close it without using the data, with a reason. */
+    @PostMapping("/api/v1/sync/quarantine/{quarantineId}/closure")
+    org.springframework.http.ResponseEntity<Void> close(@PathVariable UUID quarantineId,
+                                                         @Valid @RequestBody CloseRequest request) {
+        conflicts.closeQuarantine(quarantineId, request.reason());
+        return org.springframework.http.ResponseEntity.noContent().build();
+    }
+
     record ConflictResponse(
             UUID id, String deviceId, String deviceUser, String serverEditor, @Nullable Long baseVersion,
             long serverVersion, DraftSnapshot deviceSnapshot, DraftSnapshot serverSnapshot, Instant detectedAt,

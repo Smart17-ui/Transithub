@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Anchor, Badge, Button, Divider, Group, Loader, Modal, Paper, Stack, Stepper, Table, Text, Title,
+  Alert, Anchor, Badge, Button, Divider, Group, Loader, Modal, Paper, Stack, Stepper, Table, Text, Textarea, Title,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
@@ -20,6 +20,7 @@ import {
 import { DetailsFields, emptyDetails, normalizeDetails } from '../components/DetailsFields'
 import { DraftChecklist, EvidenceUploadDialog, RemoveDialog, RepresentativeDialog, SignatureDialog } from '../components/capture'
 import { DocumentPreview } from '../components/DocumentPreview'
+import { SnapshotView } from './SyncPage'
 
 type Dialog =
   | { kind: 'assign' | 'requestInformation' | 'approve' | 'reject' | 'withdraw' | 'audit' }
@@ -117,6 +118,7 @@ export function RegistrationPage({ token }: { token: string }) {
           )}
         </Alert>
       )}
+      {allowed.has('resolveSyncConflict') && <ConflictPanel token={token} registration={registration} name={name} />}
       {d?.decision && <DecisionBanner decision={d} company={shownCompany} name={name} />}
 
       <div className="detail-grid">
@@ -331,6 +333,46 @@ function RepresentativesPanel({ registration, editable, onOpen }: {
             })}
           </Stack>
         )}
+    </Paper>
+  )
+}
+
+/**
+ * AC-R1-SYN-05/-06: a tablet and the server changed the same draft. Both versions are
+ * shown side by side; the supervisor keeps one, with a reason. Everything else waits.
+ */
+function ConflictPanel({ token, registration, name }: { token: string; registration: Registration; name: (id: string) => string }) {
+  const queryClient = useQueryClient()
+  const conflicts = useQuery({ queryKey: ['sync-conflicts', registration.id], queryFn: () => api.syncConflicts(token, registration.id) })
+  const [reason, setReason] = useState('')
+  const open = conflicts.data?.find((c) => c.open)
+  const resolve = useMutation({
+    mutationFn: (choice: 'KEEP_SERVER' | 'USE_DEVICE') => api.resolveConflict(token, registration, open!.id, choice, reason.trim()),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['registration', registration.id], updated)
+      void queryClient.invalidateQueries({ queryKey: ['sync-conflicts', registration.id] })
+      setReason('')
+    },
+  })
+  if (!open) return null
+  return (
+    <Paper className="panel request-open" radius="lg" p="xl">
+      <Text fw={700} size="lg">Two versions of this draft</Text>
+      <Text size="sm" c="dimmed" mt={4}>
+        A tablet ({open.deviceId}, {name(open.deviceUser)}) and the server ({name(open.serverEditor)}) both changed this draft
+        on {formatDateTime(open.detectedAt)}. Choose which version to keep. Until then, the draft cannot be changed or submitted.
+      </Text>
+      <div className="conflict-columns">
+        <div><Text fw={600} size="sm">On the server now</Text><SnapshotView snapshot={open.serverSnapshot} /></div>
+        <div><Text fw={600} size="sm">From the tablet</Text><SnapshotView snapshot={open.deviceSnapshot} /></div>
+      </div>
+      <Textarea mt="md" label="Reason for your choice" required value={reason} onChange={(e) => setReason(e.currentTarget.value)}
+        placeholder="e.g. The tablet has the corrected address" autosize minRows={2} maxLength={2000} />
+      {resolve.error && <ApiError error={resolve.error} />}
+      <Group justify="flex-end" mt="md">
+        <Button radius="xl" variant="default" disabled={!reason.trim()} loading={resolve.isPending && resolve.variables === 'KEEP_SERVER'} onClick={() => resolve.mutate('KEEP_SERVER')}>Keep the server version</Button>
+        <Button radius="xl" color="teal" disabled={!reason.trim()} loading={resolve.isPending && resolve.variables === 'USE_DEVICE'} onClick={() => resolve.mutate('USE_DEVICE')}>Use the tablet version</Button>
+      </Group>
     </Paper>
   )
 }

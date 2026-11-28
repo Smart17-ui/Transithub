@@ -53,6 +53,11 @@
 			<version>3.2.1</version>
 		</dependency>
 		<dependency>
+			<!-- Email notifications over SMTP (backlog #13); provider must satisfy the data-protection answers (#3) -->
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+		<dependency>
 			<!-- Health check for monitoring and load balancers (ADR-0013) -->
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>

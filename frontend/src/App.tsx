@@ -19,6 +19,9 @@ import { QueuePage } from './pages/QueuePage'
 import { RegistrationPage } from './pages/RegistrationPage'
 import { ApplicationPage } from './pages/ApplicationPage'
 import { RecordsPage } from './pages/RecordsPage'
+import { StaffPage } from './pages/StaffPage'
+import { InvitationPage } from './pages/InvitationPage'
+import { SyncPage } from './pages/SyncPage'
 import { SignInPage } from './pages/SignInPage'
 
 function App() {
@@ -73,6 +76,7 @@ function App() {
             {user && <>
               <span className="topbar-divider" aria-hidden />
               <WorkspaceLabel token={user.access_token} />
+              <StaffNav token={user.access_token} />
             </>}
           </Group>
           <Group gap="md">
@@ -111,7 +115,9 @@ function App() {
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/register" element={<RegisterCompanyPage />} />
             <Route path="/sign-in" element={user ? <Navigate to="/" replace /> : signInPage} />
-            <Route path="/staff" element={<Navigate to="/sign-in" replace />} />
+            <Route path="/sync" element={signedIn(user && <SyncPage token={user.access_token} />)} />
+            <Route path="/invitation" element={<InvitationPage token={user?.access_token ?? null} />} />
+            <Route path="/staff" element={signedIn(user && <StaffPage token={user.access_token} />)} />
             <Route path="/registrations/new" element={signedIn(user && <NewRegistrationPage token={user.access_token} />)} />
             <Route path="/enquiries" element={signedIn(user && <EnquiriesPage token={user.access_token} />)} />
             <Route path="/registrations/:id" element={signedIn(user && <RegistrationPage token={user.access_token} />)} />
@@ -135,6 +141,24 @@ function WorkspaceLabel({ token }: { token: string }) {
   return <Text size="sm" className="topbar-product">{label}</Text>
 }
 
+/** The staff workspace's sections, each shown only to those whose role uses it. */
+function StaffNav({ token }: { token: string }) {
+  const { can } = useMe(token)
+  const links = [
+    { to: '/', label: 'Applications', show: can('registration.view'), end: true },
+    { to: '/records', label: 'Company records', show: can('registration.view'), end: false },
+    { to: '/enquiries', label: 'Enquiries', show: can('enquiry.manage'), end: false },
+    { to: '/sync', label: 'Offline sync', show: can('registration.resolve-sync-conflict'), end: false },
+    { to: '/staff', label: 'Staff', show: can('platform-user.manage'), end: false },
+  ].filter((l) => l.show)
+  if (links.length < 2) return null
+  return (
+    <nav className="topbar-nav staff-nav" aria-label="Workspace">
+      {links.map((l) => <NavLink key={l.to} to={l.to} end={l.end}>{l.label}</NavLink>)}
+    </nav>
+  )
+}
+
 /** Names the browser tab after the page: the public site for visitors, the workspace for staff. */
 function PageTitle({ signedIn }: { signedIn: boolean }) {
   const { pathname } = useLocation()
@@ -146,10 +170,14 @@ function PageTitle({ signedIn }: { signedIn: boolean }) {
       '/contact': 'Contact us',
       '/register': 'Register your bus company',
       '/sign-in': 'Sign in',
+      '/invitation': 'Your invitation',
     }
     const staffTitle = pathname === '/' ? 'Work queue'
       : pathname === '/enquiries' ? 'Enquiries'
       : pathname === '/records' ? 'Company records'
+      : pathname === '/staff' ? 'Staff'
+      : pathname === '/sync' ? 'Offline sync'
+      : pathname === '/invitation' ? 'Your invitation'
       : pathname === '/registrations/new' ? 'New registration'
       : pathname.startsWith('/registrations/') ? 'Registration'
       : pathname.startsWith('/application/') ? 'My application'

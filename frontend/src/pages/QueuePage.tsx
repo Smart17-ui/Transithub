@@ -64,7 +64,7 @@ export function QueuePage({ token }: { token: string }) {
     if (can('enquiry.manage')) return <Navigate to="/enquiries" replace />
     // No roles at all: someone who signed up to bring their bus company to TransitHub.
     if (me.emailNotConfirmed || me.roles.length === 0) return <ApplicantHome token={token} name={me.displayName} emailNotConfirmed={!!me.emailNotConfirmed} />
-    return <CompanyHome name={me.displayName} />
+    return <CompanyHome token={token} name={me.displayName} companyId={me.companyIds[0]} />
   }
 
   const totalPages = list.data ? Math.max(1, Math.ceil(list.data.total / PAGE_SIZE)) : 1
@@ -158,15 +158,44 @@ function QueueStatus({ item }: { item: RegistrationListItem }) {
   return <StatusBadge status={item.status} />
 }
 
-/** Transport-company users have no registration queue; their company workspace is still to come. */
-function CompanyHome({ name }: { name: string | null }) {
+/**
+ * Home for a bus company's people (Company Administrator). Their company is
+ * established and active; its tools arrive here as they are released.
+ */
+function CompanyHome({ token, name, companyId }: { token: string; name: string | null; companyId: string | undefined }) {
+  const company = useQuery({ queryKey: ['company', companyId], queryFn: () => api.getCompany(token, companyId!), enabled: !!companyId })
+  const c = company.data
+  // The application that established the company, if this person applied online.
+  const applications = useQuery({ queryKey: ['my-applications'], queryFn: () => api.myApplications(token) })
+  const approved = applications.data?.find((x) => x.status === 'APPROVED')
   return (
-    <Paper className="panel center-message" radius="lg" p="xl">
-      <Title order={2}>Welcome{name ? `, ${name}` : ''}</Title>
-      <Text c="dimmed" mt="sm">
-        Your company account is active on TransitHub. Tools to manage your workforce, fleet, trips and ticketing
-        will become available here as they are released.
-      </Text>
-    </Paper>
+    <div className="applicant-home">
+      <Paper className="panel applicant-welcome" radius="lg" p="xl">
+        <Text size="xs" fw={700} tt="uppercase" lts={1} c="var(--th-accent-text)">Company workspace</Text>
+        <Title order={1} className="application-title">Welcome{name ? `, ${name}` : ''}</Title>
+        {c ? (
+          <div className="applicant-open">
+            <Group justify="space-between" wrap="wrap" gap="md">
+              <div>
+                <Text fw={700} size="lg">{c.legalName}</Text>
+                <Text size="sm" c="dimmed" mt={2}>Your TransitHub company code: <b className="company-code">{c.companyCode}</b></Text>
+              </div>
+              <Badge size="lg" variant="light" color={c.operationalStatus === 'ACTIVE' ? 'green' : 'orange'}>
+                {c.operationalStatus === 'ACTIVE' ? 'Active on TransitHub' : 'Being activated'}
+              </Badge>
+            </Group>
+          </div>
+        ) : company.error ? <ApiError error={company.error} /> : <Text c="dimmed" mt="sm">Loading your company…</Text>}
+        {approved && <Text size="sm" mt="sm"><Link to={`/application/${approved.id}`}>View your approved application ({approved.reference})</Link></Text>}
+        <Text c="dimmed" mt="lg" maw={680}>
+          You are the Company Administrator. The tools to run your company appear here as they launch.
+        </Text>
+        <ul className="tick-list applicant-needs">
+          <li><Badge variant="outline" color="orange" mr={6}>Coming soon</Badge>Add your office staff and give each person their role</li>
+          <li><Badge variant="outline" color="orange" mr={6}>Coming soon</Badge>Your buses, routes and trips</li>
+          <li><Badge variant="outline" color="orange" mr={6}>Coming soon</Badge>Sell tickets online and at your counters</li>
+        </ul>
+      </Paper>
+    </div>
   )
 }

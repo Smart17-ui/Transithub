@@ -21,6 +21,9 @@ import jakarta.servlet.http.HttpServletRequest;
  *   <li>an active user without any assignment (someone applying for their bus
  *       company, Release 1 §9): {@link TenantScope#applicant(UUID)}, which shows
  *       them only their own application;</li>
+ *   <li>any active user calling {@value #OWN_APPLICATIONS}: the applicant scope too, so
+ *       someone whose application was approved (now a Company Administrator) can still
+ *       open their own application, and nothing else, there;</li>
  *   <li>any platform assignment: {@link TenantScope#platform()};</li>
  *   <li>assignments in exactly one company: that company;</li>
  *   <li>assignments in several companies: the one named in
@@ -32,6 +35,7 @@ import jakarta.servlet.http.HttpServletRequest;
 class AssignmentTenantScopeResolver implements TenantScopeResolver {
 
     static final String COMPANY_HEADER = "X-Company-Id";
+    static final String OWN_APPLICATIONS = "/api/v1/my/";
 
     private final PrincipalResolver principals;
 
@@ -47,7 +51,7 @@ class AssignmentTenantScopeResolver implements TenantScopeResolver {
         }
 
         List<Principal.Assignment> assignments = principal.get().assignments();
-        if (assignments.isEmpty()) {
+        if (assignments.isEmpty() || request.getRequestURI().startsWith(OWN_APPLICATIONS)) {
             return TenantScope.applicant(principal.get().userId());
         }
         if (assignments.stream().anyMatch(Principal.Assignment::isPlatform)) {

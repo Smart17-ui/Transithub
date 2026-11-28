@@ -98,6 +98,8 @@ Restart VS Code or your terminal afterwards so it sees them.
 | `OIDC_JWK_SET_URI` | No | `<issuer>/protocol/openid-connect/certs` | Token signing keys |
 | `TRANSITHUB_BOOTSTRAP_ADMIN_SUBJECT` | No | — | Keycloak user ID of the first platform administrator (created once at start-up) |
 | `TRANSITHUB_BOOTSTRAP_ADMIN_EMAIL` / `_NAME` | No | — | That administrator's email and display name |
+| `TRANSITHUB_IDP_ADMIN_CLIENT_SECRET` | For staff management | — | Secret of the `transithub-admin-api` service account (set by `scripts/keycloak/setup-dev-admin-api.ps1`) |
+| `TRANSITHUB_APP_URL` | No | `http://localhost:5173/` | Where set-up emails send people when they are done |
 
 ### 4. Run the tests
 
@@ -125,6 +127,28 @@ bin\kc.bat start-dev --http-port 8180
 ```
 
 Create a realm `staff`, a client `transithub-backoffice`, and a user. Set `TRANSITHUB_BOOTSTRAP_ADMIN_SUBJECT` to that user's ID and restart the application to make them the first platform administrator. A step-by-step guide will follow with the frontend work.
+
+#### Self-service sign-up (bus companies create their own account)
+
+1. **Mailpit** catches the emails Keycloak sends (confirm your email, reset password) so nothing leaves your computer. Download `mailpit-windows-amd64.zip` from the Mailpit GitHub releases page, unzip it (for example to `C:\Users\<you>\tools\mailpit`) and run `mailpit.exe`. Inbox: http://localhost:8025 (SMTP on port 1025).
+2. With Keycloak running, from the repository root:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\keycloak\setup-dev-signup.ps1
+   ```
+   It installs the TransitHub theme (`keycloak-theme/transithub`: sign-in pages and emails), turns on account creation, email confirmation and password reset in the `staff` realm, and points Keycloak's email at Mailpit. It asks for the Keycloak admin password. The first time, it asks you to restart Keycloak so the new theme is found.
+3. Try it: http://localhost:5173 → **Sign in** → **Create an account** → open the email in Mailpit → confirm. The app registers the new person as an applicant (`POST /api/v1/me/account`): they hold no roles, so staff and company functions stay closed to them.
+
+After changing files in `keycloak-theme/`, run the script again to copy them into Keycloak.
+
+#### Staff management (TransitHub manages sign-in accounts)
+
+Platform Administrators add staff, give and remove roles, and disable accounts from the **Staff** page. TransitHub does this through a Keycloak service account that may only manage the staff realm's users:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\keycloak\setup-dev-admin-api.ps1
+```
+
+It creates the confidential client `transithub-admin-api` (once), gives its service account `manage-users`, `view-users` and `query-users`, and stores the secret in your Windows user environment as `TRANSITHUB_IDP_ADMIN_CLIENT_SECRET`. Restart the backend in a new window afterwards. Without the secret, staff management answers 503 `identity-provider-unavailable`. Set-up emails for new staff arrive in Mailpit.
 
 ---
 

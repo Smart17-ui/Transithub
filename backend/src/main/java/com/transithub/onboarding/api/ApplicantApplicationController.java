@@ -81,12 +81,26 @@ class ApplicantApplicationController {
         }
     }
 
-    /** @param allowedActions what the applicant can do now: edit, submit, takeBack, withdraw, startNew */
+    /**
+     * SS-8: what TransitHub asked for, and the applicant's answer. Never who asked.
+     *
+     * @param documents the documents attached to this request
+     */
+    record InformationRequestItem(UUID id, String description, java.time.LocalDate dueDate, Instant requestedAt,
+                                  String status, @Nullable String response, @Nullable Instant respondedAt,
+                                  List<EvidenceItem> documents) {
+    }
+
+    /** @param allowedActions what the applicant can do now: edit, submit, takeBack, withdraw, respond, startNew */
     record ApplicationResponse(
             UUID id, String reference, String status, long version, CompanyDetails details,
             List<RegistrationResponse.RepresentativeResponse> representatives, List<EvidenceItem> evidence,
-            List<String> missingForSubmission, List<TimelineEntry> timeline, @Nullable Instant appealDeadline,
+            List<String> missingForSubmission, List<TimelineEntry> timeline,
+            List<InformationRequestItem> informationRequests, @Nullable Instant appealDeadline,
             List<String> allowedActions, Instant createdAt, Instant updatedAt) {
+    }
+
+    record ResponseRequest(@NotNull Long version, @NotBlank @Size(max = 4000) String response) {
     }
 
     record StartRequest(@Valid RegistrationRequests.@Nullable CompanyDetailsRequest details) {
@@ -204,6 +218,23 @@ class ApplicantApplicationController {
         return view(id);
     }
 
+    /** SS-8: a document for an open information request. PDF, JPEG or PNG, at most 10 MB. */
+    @PostMapping(path = "/{id}/information-requests/{requestId}/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    ResponseEntity<ApplicationResponse> attachRequestedEvidence(
+            @PathVariable UUID id, @PathVariable UUID requestId, @RequestParam long version,
+            @RequestParam EvidenceType evidenceType, @RequestPart("file") MultipartFile file) throws IOException {
+        applications.attachRequestedEvidence(id, version, requestId, evidenceType, file.getOriginalFilename(), file.getBytes());
+        return ResponseEntity.status(201).body(view(id));
+    }
+
+    /** SS-8: answer the open request; checking resumes. */
+    @PostMapping("/{id}/information-requests/{requestId}/response")
+    ApplicationResponse respond(@PathVariable UUID id, @PathVariable UUID requestId,
+                                @Valid @RequestBody ResponseRequest request) {
+        applications.respond(id, request.version(), requestId, request.response());
+        return view(id);
+    }
+
     /** SS-9: back to draft for corrections, only before checking starts. */
     @PostMapping("/{id}/take-back")
     ApplicationResponse takeBack(@PathVariable UUID id, @Valid @RequestBody VersionRequest request) {
@@ -230,6 +261,10 @@ class ApplicantApplicationController {
                 actions.add("submit");
             }
         }
+        if (status == RegistrationStatus.AWAITING_INFORMATION
+                && view.informationRequests().stream().anyMatch(r -> "OPEN".equals(r.status()))) {
+            actions.add("respond");
+        }
         if (status == RegistrationStatus.SUBMITTED && a.getAssignedVerifier() == null) {
             actions.add("takeBack");
         }
@@ -243,9 +278,15 @@ class ApplicantApplicationController {
         return new ApplicationResponse(a.getId(), a.getReference(), status.name(), a.getVersion(), a.getDetails(),
                 a.activeRepresentatives().stream()
                         .map(r -> RegistrationResponse.RepresentativeResponse.from(r, a)).toList(),
-                a.activeEvidence().stream().map(EvidenceItem::from).toList(),
+                a.activeEvidence().stream().filter(e -> e.getInformationRequestId() == null).map(EvidenceItem::from).toList(),
                 a.missingForSubmission(),
                 view.timeline().stream().map(ApplicantApplicationController::timelineEntry).toList(),
+                view.informationRequests().stream()
+                        .map(r -> new InformationRequestItem(r.id(), r.description(), r.dueDate(), r.requestedAt(),
+                                r.status(), r.response(), r.respondedAt(),
+                                a.activeEvidence().stream().filter(e -> r.id().equals(e.getInformationRequestId()))
+                                        .map(EvidenceItem::from).toList()))
+                        .toList(),
                 a.getAppealDeadline(), actions, a.getCreatedAt(), a.getUpdatedAt());
     }
 

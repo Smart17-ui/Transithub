@@ -217,6 +217,29 @@ public class RegistrationSyncRepository {
         return id;
     }
 
+    /** The data a device sent, as it was quarantined; only while still open. */
+    public Optional<DraftSnapshot> openQuarantineSnapshot(UUID quarantineId) {
+        return jdbc.sql("SELECT payload::text FROM registration_sync_quarantine WHERE id = :id AND released_at IS NULL FOR UPDATE")
+                .param("id", quarantineId)
+                .query(String.class)
+                .optional()
+                .map(payload -> json.treeToValue(json.readTree(payload).get("snapshot"), DraftSnapshot.class));
+    }
+
+    /** #7a: the supervisor acted on it; the note says what was done and why. */
+    public void releaseQuarantine(UUID quarantineId, String releasedBy, String note, Instant now) {
+        int updated = jdbc.sql("""
+                UPDATE registration_sync_quarantine
+                   SET released_at = :now, released_by = :by, release_note = :note
+                 WHERE id = :id AND released_at IS NULL
+                """)
+                .param("now", Timestamp.from(now)).param("by", releasedBy).param("note", note).param("id", quarantineId)
+                .update();
+        if (updated != 1) {
+            throw new IllegalStateException("Quarantined item " + quarantineId + " was already released");
+        }
+    }
+
     public List<Quarantined> openQuarantine() {
         return jdbc.sql("""
                 SELECT id, registration_id, device_id, user_id, reason, received_at

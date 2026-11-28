@@ -93,7 +93,20 @@ export type Registration = {
 /** A self-service application as its applicant sees it (Release 1 §9, SS-7). */
 export type Application = Omit<Registration, 'channel' | 'capturedBy' | 'contentRevision'> & {
   timeline: { status: RegistrationStatus; at: string; note: string | null }[]
+  informationRequests: ApplicantInformationRequest[]
   appealDeadline: string | null
+}
+
+/** SS-8: something TransitHub asked the applicant for, and their answer. */
+export type ApplicantInformationRequest = {
+  id: string
+  description: string
+  dueDate: string
+  requestedAt: string
+  status: 'OPEN' | 'ANSWERED'
+  response: string | null
+  respondedAt: string | null
+  documents: Evidence[]
 }
 
 export type ApplicationSummary = {
@@ -251,6 +264,8 @@ export type Me = {
   active: boolean
   roles: string[]
   permissions: string[]
+  /** Companies the user holds a role in (e.g. as Company Administrator). */
+  companyIds: string[]
   /** Set by the app, not the server: signed up, but the email address is not confirmed yet. */
   emailNotConfirmed?: boolean
 }
@@ -285,3 +300,29 @@ export type Enquiry = {
 }
 
 export type EnquiryPage = { items: Enquiry[]; total: number; limit: number; offset: number }
+
+/** A TransitHub staff member as Platform Administrators manage them (backlog #4). */
+export type StaffUser = {
+  id: string
+  displayName: string
+  email: string | null
+  status: 'ACTIVE' | 'DISABLED'
+  roles: { role: string; grantedAt: string; grantedBy: string }[]
+  createdAt: string
+}
+
+/** What a tablet sent: company details and representatives (offline capture). */
+export type DraftSnapshot = {
+  details: CompanyDetails
+  representatives: { id: string; details: { fullName: string; capacity: string | null; phone: string | null; email: string | null; idDocumentNumber: string | null } }[]
+}
+
+/** Synced data that could not be applied, waiting for a supervisor (#7a). */
+export type QuarantinedItem = { id: string; registrationId: string; deviceId: string; userId: string; reason: string; receivedAt: string }
+
+/** Two versions of one draft, from a tablet and on the server (AC-R1-SYN-05). */
+export type SyncConflict = {
+  id: string; deviceId: string; deviceUser: string; serverEditor: string; baseVersion: number | null; serverVersion: number
+  deviceSnapshot: DraftSnapshot; serverSnapshot: DraftSnapshot; detectedAt: string; open: boolean
+  resolution: string | null; resolutionReason: string | null; resolvedBy: string | null; resolvedAt: string | null
+}

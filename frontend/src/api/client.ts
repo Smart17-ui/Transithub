@@ -1,5 +1,5 @@
 import type {
-  Application, ApplicationSummary, AssessmentOutcome, AuditPage, Company, CompanyDetails, Declaration, DecisionSummary, DuplicateFlag, Enquiry, EnquiryPage, EvidenceType, Me, NewEnquiry,
+  DraftSnapshot, QuarantinedItem, SyncConflict, StaffUser, Application, ApplicationSummary, AssessmentOutcome, AuditPage, Company, CompanyDetails, Declaration, DecisionSummary, DuplicateFlag, Enquiry, EnquiryPage, EvidenceType, Me, NewEnquiry,
   Registration, RegistrationList, RegistrationStatus, RegistryResult, RegistrySource, RepresentativeInput, StaffMember,
   VerificationSummary,
 } from './types'
@@ -211,8 +211,48 @@ export const api = {
     post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/submission`, token, { version: a.version }),
   takeBackApplication: (token: string, a: Application) =>
     post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/take-back`, token, { version: a.version }),
+  attachRequestedDocument: (token: string, a: Application, requestId: string, evidenceType: EvidenceType, file: File) => {
+    const form = new FormData()
+    form.set('version', String(a.version))
+    form.set('evidenceType', evidenceType)
+    form.set('file', file)
+    return request<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/information-requests/${encodeURIComponent(requestId)}/evidence`,
+      token, { method: 'POST', body: form })
+  },
+  respondToRequest: (token: string, a: Application, requestId: string, response: string) =>
+    post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/information-requests/${encodeURIComponent(requestId)}/response`,
+      token, { version: a.version, response }),
   withdrawApplication: (token: string, a: Application, reason: string) =>
     post<Application>(`${APPLICATIONS}/${encodeURIComponent(a.id)}/withdrawal`, token, { version: a.version, reason }),
+
+  /** AC-R1-EST-05: the signed-in person accepts a Company Administrator invitation. */
+  acceptInvitation: (token: string, invitationToken: string) =>
+    post<{ companyId: string; userId: string }>('/api/v1/invitations/acceptance', token, { token: invitationToken }),
+
+  // Offline sync: quarantine (#7a) and conflicts (AC-R1-SYN-05, -06)
+  quarantine: (token: string) => request<QuarantinedItem[]>('/api/v1/sync/quarantine', token),
+  quarantinedData: (token: string, id: string) => request<DraftSnapshot>(`/api/v1/sync/quarantine/${encodeURIComponent(id)}`, token),
+  syncOfficers: (token: string) => request<StaffMember[]>('/api/v1/sync/officers', token),
+  releaseQuarantineAsDraft: (token: string, id: string, officerId: string, note: string) =>
+    post<Registration>(`/api/v1/sync/quarantine/${encodeURIComponent(id)}/draft`, token, { officerId, note }),
+  closeQuarantine: (token: string, id: string, reason: string) =>
+    send(`/api/v1/sync/quarantine/${encodeURIComponent(id)}/closure`, token, { method: 'POST', body: JSON.stringify({ reason }) }).then(() => undefined),
+  syncConflicts: (token: string, id: string) => request<SyncConflict[]>(`${reg(id)}/sync-conflicts`, token),
+  resolveConflict: (token: string, r: Registration, conflictId: string, resolution: 'KEEP_SERVER' | 'USE_DEVICE', reason: string) =>
+    post<Registration>(`${reg(r.id)}/sync-conflicts/${encodeURIComponent(conflictId)}/resolution`, token, { resolution, reason }),
+
+  // Staff management (backlog #4): Platform Administrators only
+  staffUsers: (token: string) => request<StaffUser[]>('/api/v1/staff/users', token),
+  addStaff: (token: string, body: { email: string; firstName: string; lastName: string; roles: string[] }) =>
+    post<{ userId: string; reusedExistingAccount: boolean }>('/api/v1/staff/users', token, body),
+  grantStaffRole: (token: string, userId: string, role: string) =>
+    send(`/api/v1/staff/users/${encodeURIComponent(userId)}/roles`, token, { method: 'POST', body: JSON.stringify({ role }) }).then(() => undefined),
+  revokeStaffRole: (token: string, userId: string, role: string, reason: string) =>
+    send(`/api/v1/staff/users/${encodeURIComponent(userId)}/roles/${role}/revocation`, token, { method: 'POST', body: JSON.stringify({ reason }) }).then(() => undefined),
+  setStaffEnabled: (token: string, userId: string, enabled: boolean, reason: string) =>
+    send(`/api/v1/staff/users/${encodeURIComponent(userId)}/${enabled ? 'enable' : 'disable'}`, token, { method: 'POST', body: JSON.stringify({ reason }) }).then(() => undefined),
+  resendStaffSetup: (token: string, userId: string) =>
+    send(`/api/v1/staff/users/${encodeURIComponent(userId)}/setup-email`, token, { method: 'POST' }).then(() => undefined),
 
   // Staff
   me: (token: string) => request<Me>('/api/v1/me', token),

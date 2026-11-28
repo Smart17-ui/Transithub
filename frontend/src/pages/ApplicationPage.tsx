@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Anchor, Badge, Button, Group, Modal, Paper, Stack, Text, Textarea, ThemeIcon, Title,
+  Alert, Anchor, Badge, Button, FileInput, Group, Modal, Paper, Select, Stack, Text, Textarea, ThemeIcon, Title,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { APPLICATIONS, api } from '../api/client'
-import type { Application, CompanyDetails, Evidence, Registration, RegistrationStatus, Representative } from '../api/types'
+import type { Application, CompanyDetails, Evidence, EvidenceType, Registration, RegistrationStatus, Representative } from '../api/types'
 import { ApiError, CenterMessage, evidenceTypeLabels, formatDate, formatDateTime } from '../components/common'
 import { DetailsFields, emptyDetails, normalizeDetails } from '../components/DetailsFields'
 import { DocumentPreview } from '../components/DocumentPreview'
@@ -30,7 +30,7 @@ const stage: Record<RegistrationStatus, { label: string; color: string; text: st
   DRAFT: { label: 'In preparation', color: 'gray', text: 'Complete the four steps below, then submit. Your changes are saved as you go.' },
   SUBMITTED: { label: 'Submitted', color: 'blue', text: 'We have your application. A member of our team will start checking it soon.' },
   UNDER_VERIFICATION: { label: 'Being checked', color: 'blue', text: 'Our team is checking your company with PACRA and RTSA and reviewing your documents.' },
-  AWAITING_INFORMATION: { label: 'More information needed', color: 'orange', text: 'We need something more from you. Our team will contact you with the details.' },
+  AWAITING_INFORMATION: { label: 'More information needed', color: 'orange', text: 'We need something more from you before we can continue. See what we asked for below.' },
   RECOMMENDED: { label: 'Being checked', color: 'blue', text: 'Our checks are nearly complete. You will hear from us soon.' },
   APPROVED: { label: 'Approved', color: 'green', text: 'Congratulations: your company is approved on TransitHub.' },
   REJECTED: { label: 'Declined', color: 'red', text: 'We could not approve this application. The reasons are below.' },
@@ -100,6 +100,7 @@ export function ApplicationPage({ token }: { token: string }) {
         <ProgressBar application={application} />
       </Paper>
 
+      {application.informationRequests.length > 0 && <RequestsPanel token={token} application={application} onPreview={(evidence) => setDialog({ kind: 'preview', evidence })} />}
       {application.status === 'REJECTED' && <DeclinedPanel application={application} />}
       {application.status === 'APPROVED' && (
         <Alert color="green" radius="lg" title="Your company is approved">
@@ -306,6 +307,88 @@ function TimelinePanel({ application }: { application: Application }) {
         ))}
       </ol>
     </Paper>
+  )
+}
+
+/** SS-8: what our team asked for; the open request can be answered here, with documents. */
+function RequestsPanel({ token, application, onPreview }: {
+  token: string; application: Application; onPreview: (evidence: Evidence) => void
+}) {
+  const open = application.informationRequests.filter((r) => r.status === 'OPEN')
+  const answered = application.informationRequests.filter((r) => r.status === 'ANSWERED')
+  return (
+    <Paper className={`panel ${open.length ? 'request-open' : ''}`} radius="lg" p="xl">
+      <Text fw={700} size="lg">{open.length ? 'We need more information' : 'Information you sent us'}</Text>
+      {open.map((r) => <OpenRequest key={r.id} token={token} application={application} request={r} onPreview={onPreview} />)}
+      {answered.length > 0 && (
+        <Stack gap="sm" mt={open.length ? 'xl' : 'md'}>
+          {open.length > 0 && <Text fw={600} size="sm">Earlier requests</Text>}
+          {[...answered].reverse().map((r) => (
+            <div key={r.id} className="list-row">
+              <Text size="sm" fw={600}>{r.description}</Text>
+              <Text size="xs" c="dimmed">Asked {formatDate(r.requestedAt)} · answered {formatDateTime(r.respondedAt)}</Text>
+              {r.response && <Text size="sm" mt={4}>Your answer: {r.response}</Text>}
+              {r.documents.map((d) => <Anchor key={d.id} component="button" size="xs" mr="sm" onClick={() => onPreview(d)}>{d.fileName}</Anchor>)}
+            </div>
+          ))}
+        </Stack>
+      )}
+    </Paper>
+  )
+}
+
+function OpenRequest({ token, application, request, onPreview }: {
+  token: string; application: Application; request: Application['informationRequests'][number]; onPreview: (evidence: Evidence) => void
+}) {
+  const queryClient = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [type, setType] = useState<EvidenceType>('OTHER')
+  const [answer, setAnswer] = useState('')
+  const store = (updated: Application) => queryClient.setQueryData(['registration', application.id], updated)
+  const upload = useMutation({
+    mutationFn: () => api.attachRequestedDocument(token, application, request.id, type, file!),
+    onSuccess: (updated) => { store(updated); setFile(null) },
+  })
+  const send = useMutation({
+    mutationFn: () => api.respondToRequest(token, application, request.id, answer.trim()),
+    onSuccess: (updated) => { store(updated); queryClient.invalidateQueries({ queryKey: ['my-applications'] }) },
+  })
+  const tooBig = !!file && file.size > 10 * 1024 * 1024
+  const overdue = new Date(request.dueDate + 'T23:59:59') < new Date()
+
+  return (
+    <div className="request-box">
+      <Text size="xs" fw={700} tt="uppercase" lts={0.8} c={overdue ? 'red' : 'var(--th-accent-text)'}>
+        Please reply by {formatDate(request.dueDate)}{overdue ? ' (past the date: please reply as soon as you can)' : ''}
+      </Text>
+      <Text mt={6} className="request-question">{request.description}</Text>
+
+      <Text fw={600} size="sm" mt="lg">Documents for this request</Text>
+      {request.documents.length === 0
+        ? <Text size="sm" c="dimmed">None added yet. Add any document we asked for.</Text>
+        : request.documents.map((d) => (
+          <Group key={d.id} gap="sm" mt={4}>
+            <Anchor component="button" size="sm" fw={600} onClick={() => onPreview(d)}>{d.fileName}</Anchor>
+            <Text size="xs" c="dimmed">{evidenceTypeLabels[d.evidenceType]}</Text>
+          </Group>
+        ))}
+      <Group align="flex-end" gap="sm" mt="sm" wrap="wrap">
+        <Select label="Type of document" w={260} value={type} onChange={(v) => setType((v ?? 'OTHER') as EvidenceType)} allowDeselect={false}
+          data={Object.entries(evidenceTypeLabels).map(([value, label]) => ({ value, label }))} />
+        <FileInput label="File" placeholder="PDF, JPEG or PNG, up to 10 MB" w={280} value={file} onChange={setFile} clearable
+          accept="application/pdf,image/jpeg,image/png" error={tooBig ? 'The maximum size is 10 MB.' : null} />
+        <Button variant="light" color="teal" radius="xl" disabled={!file || tooBig} loading={upload.isPending} onClick={() => upload.mutate()}>Add document</Button>
+      </Group>
+      {upload.error && <ApiError error={upload.error} />}
+
+      <Textarea label="Your answer" mt="lg" required autosize minRows={3} maxLength={4000}
+        placeholder="Explain what you are sending, or answer the question." value={answer} onChange={(e) => setAnswer(e.currentTarget.value)} />
+      {send.error && <ApiError error={send.error} />}
+      <Group justify="flex-end" mt="md">
+        <Button color="teal" radius="xl" disabled={!answer.trim()} loading={send.isPending} onClick={() => send.mutate()}>Send to TransitHub</Button>
+      </Group>
+      <Text size="xs" c="dimmed" ta="right" mt={4}>Once you send it, our team continues checking your application.</Text>
+    </div>
   )
 }
 

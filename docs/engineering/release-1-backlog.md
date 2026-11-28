@@ -40,7 +40,7 @@
 - Record answers; significant ones become ADRs.
 - **Done when:** the top five Infratel questions and Part B #1–#4 are answered in writing. **Blocks go-live, not development.**
 
-### #4 Step 2b: staff user management
+### #4 Step 2b: staff user management — **DONE (28 Nov 2026)**
 **Labels:** `backend`
 - API for platform administrators to create, disable and re-enable staff users, and to grant or revoke scoped roles (UC-X-IAM-02, -03). Audited, with reasons.
 - Create the user in Keycloak through its Admin API, which sends the set-password email, and link it by subject.
@@ -69,7 +69,7 @@
 - Possible-duplicate flag on matching registration number, or matching legal name plus district.
 - **Acceptance criteria:** AC-R1-SUB-01…03.
 
-### #7a Release synced data from quarantine
+### #7a Release synced data from quarantine — **DONE (28 Nov 2026)**
 **Labels:** `backend`
 - A supervisor reviews a quarantined item and either turns it into a draft (assigned to an active officer) or closes it with a reason. Audited.
 - **Done when:** nothing in quarantine can only be viewed; each item can be acted on.
@@ -107,7 +107,7 @@
 - Read-only audit trail endpoint for `audit.view` (UC-X-AUD-01).
 - **Evidence:** `POST /api/v1/registrations/{id}/withdrawal` records a required reason and instruction confirmation, transitions status and status history atomically, and `GET /api/v1/registrations/{id}/audit-events` returns a bounded read-only page for users with `audit.view`.
 
-### #13 Notifications (email and SMS), Zambian providers
+### #13 Notifications (email and SMS), Zambian providers — **DONE for email; SMS logged until a provider is chosen (28 Nov 2026)**
 - The invitation token is stored **sealed** (`sealedToken`, encrypted with `SecretSealer`); the sender unseals it at delivery and should purge sent rows after a retention period.
 **Labels:** `backend`, `infra`
 - A notification port with email and SMS adapters, choosing providers that satisfy the data-protection answers (#3).
@@ -148,3 +148,37 @@
 ### #19 Close my account (decision SS-14)
 **Labels:** `backend`, `frontend`
 - An applicant with no application can close their own account. Until then, "Ask us to close it" goes through the Contact page.
+
+### #4 done (28 Nov 2026)
+- Keycloak admin connection through the `transithub-admin-api` service account (`IdentityProviderAdmin`; `scripts/keycloak/setup-dev-admin-api.ps1`); a fake in tests.
+- `/api/v1/staff/users`: list, add (new account with a set-up email for password, email confirmation and authenticator; or **reuse an existing account with the same email, SS-15**), grant and revoke platform roles, disable and re-enable (also at Keycloak), resend set-up email. Reasons required for removals; all audited.
+- Rules: nobody changes their own access; the last active Platform Administrator cannot lose the role or be disabled; company roles are not managed here. Changes apply from the next request.
+- **SS-6:** approving a self-service application requires the new Company Administrator to set up an authenticator at their next sign-in (after commit; a Keycloak failure is logged, never undoes the approval).
+- Frontend: Staff page and workspace navigation (Applications, Company records, Enquiries, Staff by permission).
+- Tests: `StaffManagementIntegrationTest` (7) and the SS-6 assertion in `ApplicantApplicationIntegrationTest`.
+
+### #13 done (28 Nov 2026)
+- `NotificationDispatcher` sends the outbox every 15 s (in platform scope, `FOR UPDATE SKIP LOCKED`): email when the recipient has an address, otherwise SMS; up to 5 attempts, then kept with `last_error`. An invitation's `sealedToken` is removed once sent.
+- Recipients are resolved by each module (`RecipientDirectory`): users by id (identity), `representative:<id>` (onboarding), `team:support` (configured address). Plain-language messages per template (`NotificationMessages`).
+- Email over SMTP (`SMTP_HOST`/`SMTP_PORT`…; Mailpit in development). **Go-live needs a provider cleared under #3.** SMS: a logging sender (numbers masked) until an SMS provider is chosen.
+- Tests: `NotificationDispatcherIntegrationTest` (support email, invitation by SMS with token wiped, unreachable recipient retried with its error).
+
+### #7a done (28 Nov 2026)
+- Supervisors (`registration.resolve-sync-conflict`) read quarantined data, then either **turn it into a new draft** for an active Onboarding Officer (new ids throughout, so device data cannot touch another registration) or **close it with a reason**. Released items record who, when and what (`release_note`); audited.
+- Frontend: **Offline sync** page (quarantine) and a **two-versions panel** on the application page to keep the server or tablet version, with a reason.
+- Tests: `QuarantineReleaseIntegrationTest`.
+
+### #15 remainder done (28 Nov 2026)
+- Invitation acceptance page `/invitation` (link from the invitation email or SMS; the token is moved out of the address bar at once), sync-conflict and quarantine screens.
+
+### #17 second review (28 Nov 2026) — **DONE**
+Independent review (high) of everything since the first review: 8 important and 2 minor findings, all confirmed and fixed, each with a regression test (238 tests):
+1. SS-6 also on invitation acceptance (authenticator required for every Company Administrator).
+2. After approval the applicant can still open their own application (`/api/v1/my/**` always runs in the applicant scope; starting one stays for people without a role).
+3. Adding staff after an unfinished attempt still sends the set-up email (decided by whether a password exists).
+4. Notifications retry with backoff (1, 2, 4 … minutes, up to 6 hours apart, 16 attempts; V18 `next_attempt_at`), one message per transaction.
+5. "Last Platform Administrator" protected against simultaneous changes (advisory lock).
+6. Keycloak updates send the whole account back (no partial updates under the declarative user profile).
+7. Contact-form rate limiter made thread-safe.
+8. Adding someone whose account is disabled explains what to do (422), not 500.
+9. Missing role in a role request is a 400; Javadoc order in `DecisionService`.
