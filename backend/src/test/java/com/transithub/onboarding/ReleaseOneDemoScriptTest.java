@@ -60,10 +60,7 @@ class ReleaseOneDemoScriptTest {
     void kafueCoachesFromChipataToTheirFirstSignIn() throws Exception {
         TestUsers users = new TestUsers(jdbc);
         TestUsers.TestUser joseph = users.platform(Role.REGISTRATION_OFFICER);
-        TestUsers.TestUser supervisor = users.platform(Role.REGISTRATION_SUPERVISOR);
         TestUsers.TestUser chanda = users.platform(Role.VERIFICATION_OFFICER);
-        TestUsers.TestUser mwila = users.platform(Role.RECOMMENDATION_REVIEWER);
-        TestUsers.TestUser ruth = users.platform(Role.REGISTRATION_APPROVER);
         String suffix = UUID.randomUUID().toString().substring(0, 8);
 
         // 1. Joseph captures Kafue Coaches in airplane mode: details, two
@@ -74,6 +71,7 @@ class ReleaseOneDemoScriptTest {
         String snapshot = """
                 {"deviceId": "tablet-chipata-01", "items": [{"id": "%s", "snapshot": {
                   "details": {"legalName": "Kafue Coaches Ltd %s", "registrationNumber": "PACRA-%s",
+                              "operatingLicenceNumber": "RSL-%s",
                               "businessType": "Bus operator", "province": "Lusaka", "district": "Kafue",
                               "physicalAddress": "Plot 12, Kafue Road", "contactPhone": "+260971000001"},
                   "representatives": [
@@ -81,7 +79,7 @@ class ReleaseOneDemoScriptTest {
                      "capacity": "Director", "phone": "+260971000002", "primaryContact": true},
                     {"id": "%s", "fullName": "Mrs Phiri", "idDocumentType": "NRC", "idDocumentNumber": "654321/10/1",
                      "capacity": "Director", "phone": "+260971000003", "acknowledgementRequired": false}]}}]}
-                """.formatted(id, suffix, suffix, banda, phiri);
+                """.formatted(id, suffix, suffix, suffix, banda, phiri);
 
         // 2. Airplane mode off: the draft syncs once, and a retry creates nothing new.
         String reference = JsonPath.read(sync(joseph, snapshot)
@@ -103,20 +101,16 @@ class ReleaseOneDemoScriptTest {
         command(joseph, id, "/submission", "{\"version\": %d}".formatted(version(joseph, id)))
                 .andExpect(jsonPath("$.registration.status").value("SUBMITTED"));
 
-        // 3. The supervisor assigns Chanda. She finds the tax clearance expired
-        //    and asks for a new one; Joseph uploads it; she recommends approval.
-        command(supervisor, id, "/verification/assignment", """
-                {"version": %d, "verifierId": "%s", "reason": "Next in queue"}
-                """.formatted(version(supervisor, id), chanda.id()))
-                .andExpect(jsonPath("$.status").value("UNDER_VERIFICATION"));
-
-        // 4. Joseph, who also holds verifier rights, is refused on his own registration.
+        // 3. Joseph, who also holds checker rights, cannot take his own registration.
         users.addRole(joseph, Role.VERIFICATION_OFFICER, null);
-        command(supervisor, id, "/verification/assignment", """
-                {"version": %d, "verifierId": "%s"}
-                """.formatted(version(supervisor, id), joseph.id()))
+        command(joseph, id, "/verification/take", "{\"version\": %d}".formatted(version(joseph, id)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("separation-of-duties"));
+
+        // 4. Chanda takes it from the queue. She finds the tax clearance expired
+        //    and asks for a new one; Joseph uploads it.
+        command(chanda, id, "/verification/take", "{\"version\": %d}".formatted(version(chanda, id)))
+                .andExpect(jsonPath("$.status").value("UNDER_VERIFICATION"));
 
         command(chanda, id, "/information-requests", """
                 {"version": %d, "description": "The tax clearance expired in 2024. Please provide a current one.",
@@ -142,18 +136,13 @@ class ReleaseOneDemoScriptTest {
                     {"version": %d, "outcome": "ACCEPTED", "findings": "Verified"}
                     """.formatted(version(chanda, id))).andExpect(status().isOk());
         }
-        command(chanda, id, "/verification/recommendation", """
-                {"version": %d, "recommendation": "APPROVE", "reasons": "All documents verified"}
-                """.formatted(version(chanda, id)))
-                .andExpect(jsonPath("$.status").value("RECOMMENDED"));
 
-        // 5. Mwila endorses; Ruth approves.
-        command(mwila, id, "/recommendation-review", """
-                {"version": %d, "outcome": "ENDORSE"}
-                """.formatted(version(mwila, id))).andExpect(status().isOk());
-        String approval = command(ruth, id, "/decision/approval", """
+        // 5. Chanda checks the PACRA number and the RTSA licence at source, then approves.
+        registryCheck(chanda, id, "PACRA", "PACRA-" + suffix, "MATCH", "Active on the PACRA register");
+        registryCheck(chanda, id, "RTSA", "RSL-" + suffix, "MATCH", "Licence confirmed with RTSA");
+        String approval = command(chanda, id, "/decision/approval", """
                 {"version": %d, "rationale": "All requirements met"}
-                """.formatted(version(ruth, id)))
+                """.formatted(version(chanda, id)))
                 .andExpect(jsonPath("$.registration.status").value("APPROVED"))
                 .andReturn().getResponse().getContentAsString();
 
@@ -182,25 +171,14 @@ class ReleaseOneDemoScriptTest {
         // 7. A second registration is rejected with reasons and a 30-day appeal deadline.
         TestUsers.TestUser otherOfficer = users.platform(Role.REGISTRATION_OFFICER);
         UUID second = new com.transithub.onboarding.api.RegistrationFixtures(mockMvc).submitted(otherOfficer);
-        TestUsers.TestUser otherVerifier = users.platform(Role.VERIFICATION_OFFICER);
-        command(supervisor, second, "/verification/assignment", """
-                {"version": %d, "verifierId": "%s"}
-                """.formatted(version(supervisor, second), otherVerifier.id()));
-        String secondEvidence = JsonPath.read(json(otherVerifier, "/api/v1/registrations/" + second), "$.evidence[0].id");
-        command(otherVerifier, second, "/verification/evidence/" + secondEvidence + "/assessment", """
-                {"version": %d, "outcome": "INVALID", "findings": "The operating licence is forged"}
-                """.formatted(version(otherVerifier, second)));
-        command(otherVerifier, second, "/verification/recommendation", """
-                {"version": %d, "recommendation": "REJECT", "reasons": "Forged operating licence"}
-                """.formatted(version(otherVerifier, second)));
-        command(mwila, second, "/recommendation-review", """
-                {"version": %d, "outcome": "ENDORSE"}
-                """.formatted(version(mwila, second)));
-        command(ruth, second, "/decision/rejection", """
-                {"version": %d, "reasons": "The operating licence is forged"}
-                """.formatted(version(ruth, second)))
+        TestUsers.TestUser otherChecker = users.platform(Role.VERIFICATION_OFFICER);
+        command(otherChecker, second, "/verification/take", "{\"version\": %d}".formatted(version(otherChecker, second)));
+        registryCheck(otherChecker, second, "RTSA", "RSL-unknown", "NOT_FOUND", "No such licence on the RTSA register");
+        command(otherChecker, second, "/decision/rejection", """
+                {"version": %d, "reasons": "The operating licence could not be found with RTSA"}
+                """.formatted(version(otherChecker, second)))
                 .andExpect(jsonPath("$.status").value("REJECTED"));
-        assertTrue(JsonPath.<String>read(json(ruth, "/api/v1/registrations/" + second + "/decision"),
+        assertTrue(JsonPath.<String>read(json(otherChecker, "/api/v1/registrations/" + second + "/decision"),
                 "$.decision.appealDeadline") != null);
 
         // 8. The audit trail shows every step: who, what, when.
@@ -211,8 +189,8 @@ class ReleaseOneDemoScriptTest {
                 "registration.synced", "registration.evidence-attached", "registration.acknowledged",
                 "registration.submitted", "registration.verifier-assigned", "registration.information-requested",
                 "registration.requested-evidence-attached", "registration.information-provided",
-                "registration.evidence-assessed", "registration.recommended",
-                "registration.recommendation-endorsed", "registration.approved")), actions.toString());
+                "registration.evidence-assessed", "registration.registry-checked",
+                "registration.approved")), actions.toString());
         assertEquals(List.of("company.established", "company.invitation-issued", "company.activated"),
                 jdbc.sql("SELECT action FROM audit_event WHERE entity_id = :id ORDER BY occurred_at, id")
                         .param("id", companyId).query(String.class).list());
@@ -220,6 +198,14 @@ class ReleaseOneDemoScriptTest {
     }
 
     // --- helpers -----------------------------------------------------------------
+
+    private void registryCheck(TestUsers.TestUser checker, UUID id, String source, String reference, String result,
+                               String note) throws Exception {
+        command(checker, id, "/verification/registry-checks", """
+                {"version": %d, "source": "%s", "reference": "%s", "result": "%s", "note": "%s"}
+                """.formatted(version(checker, id), source, reference, result, note))
+                .andExpect(status().isCreated());
+    }
 
     private ResultActions sync(TestUsers.TestUser user, String body) throws Exception {
         return mockMvc.perform(post("/api/v1/sync/registrations").with(user.token())

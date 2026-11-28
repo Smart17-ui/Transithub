@@ -3,6 +3,15 @@
 **Status:** **Approved for build** by the product owner (26 November 2026). This is the build specification for Release 1.
 **Basis:** [ADR-0001 to 0015](../adr/README.md), the decision log in [recommendations.md](../engineering/recommendations.md), use cases in [02-use-cases.md](../analysis/02-use-cases.md), and BP-01.01 rules BR-ONB-012–092.
 
+> **Change notice, 27 November 2026 (product owner).** Verification is lighter but traceable:
+> - **One Compliance Officer** (role code `VERIFICATION_OFFICER`) takes a submitted application, reviews the documents, records **registry verifications** (PACRA and RTSA required; ZRA optional) and **approves or declines** it. The recommendation, independent review and separate approver steps (AC-R1-VER-07, AC-R1-DEC-01, -02) are retired, as are the Recommendation Reviewer and Registration Approver roles.
+> - **Separation of duties kept:** whoever prepared, edited or signed for an application can neither take it nor decide on it. Supervisors may still assign or reassign reviews.
+> - **Submission now requires** the PACRA registration number, the RTSA Road Service Licence number, the Certificate of Incorporation and the Road Service Licence. Other documents are optional.
+> - **Approval requires** every current document accepted, potential duplicates reviewed, and the latest PACRA and RTSA verifications showing a match.
+> - Lifecycle: `Draft → Submitted → Under review ⇄ Information requested → Approved | Declined`. `RECOMMENDED` remains only for records created before this change.
+>
+> Sections 3–5 below keep the original wording for history; where they differ, this notice applies.
+
 > **Rule traceability caveat.** Rule references below are at **group level** (e.g. BR-ONB-012–020). The full text of BR-ONB-012–142 is not yet in the repo. Before building each feature, its criteria are checked against the exact rule text, and any difference is raised with you. Items marked **[check rule text]** are most likely to need it.
 
 ---
@@ -40,7 +49,7 @@ A Registration Officer registers a transport company **offline on a tablet**. Th
 | Establish company and generate code | UC-01.01-12 | — |
 | Invite first Company Administrator; first sign-in | UC-01.01-16, UC-X-IAM-01 | Full company user management (Release 2) |
 | Withdraw before a decision | UC-01.01-15 | Re-registration linking (later) |
-| Registration status and progress | UC-01.01-17 (staff view) | Applicant self-service portal (later) |
+| Registration status and progress | UC-01.01-17 (staff view) | Applicant self-service portal: **moved into Release 1, see §9** |
 | Platform staff accounts and scoped roles | UC-X-IAM-01 to -03 | Delegation (UC-X-IAM-04) |
 | Audit trail view | UC-X-AUD-01 (basic) | — |
 | Notifications: email and SMS for invitation, information request, decision | UC-X-GOV-04 (basic) | Delivery tracking, acknowledgement, failure escalation |
@@ -185,3 +194,35 @@ Test names cite the criterion ID, for example `AC_R1_CAP_03_missingMandatoryFiel
 3. Every representative marked "required" must acknowledge.
 4. Activation needs only the first administrator's sign-in, with no subscription condition in Release 1.
 5. Proposed limits: 10 MB per evidence file, 7-day invitation expiry, 30-day appeal window (all settings).
+
+---
+
+## 9. Self-service company sign-up (pulled into Release 1, product owner, 27 November 2026)
+
+The applicant portal moves from "later" into Release 1. It replaces the interim `/register` request form. Officer field capture stays for companies that need help.
+
+| # | Situation | Decision |
+|---|---|---|
+| SS-1 | A bus company owner clicks "Register your company" | They create an **applicant account** and fill in the application themselves; they can save and return later. |
+| SS-2 | The application is approved | The **same login** receives the Company Administrator role. There is no second sign-up; the invitation step is replaced for self-service applicants. |
+| SS-3 | Two people from the same company each start an application | **Both may apply.** The existing duplicate check flags it; the Compliance Officer keeps one and declines the other with a reason. Nobody is told that another application exists. |
+| SS-4 | The company has several directors who must sign | Each director receives a link (SMS or email) to review and sign **on their own phone**. Until notifications (#13) exist, they sign on the applicant's screen. |
+| SS-5 | The applicant creates an account | **Email and password**; the email is confirmed by a link before the application can be submitted. The phone number is collected and verified by SMS once SMS sending (#13) exists. |
+| SS-6 | Second security step (authenticator code) | **Not while applying.** Required from the moment the account becomes Company Administrator. |
+| SS-7 | The applicant signs in while the application is being checked | A **progress timeline** (Submitted, Being checked, Decision), any requests from TransitHub, and the decision with reasons. Never the checker's identity or internal notes. |
+| SS-8 | The Compliance Officer asks for a clearer document | The applicant sees the request **in their account** (and by email once sending exists), uploads the document and replies there; it is recorded on the application. |
+| SS-9 | The applicant spots a mistake after submitting | The submitted version stays locked. **Before checking starts** they can pull it back to draft, correct it and submit again (a new submitted version). Once checking has started, they send a message and the Compliance Officer requests the correction. |
+| SS-10 | The applicant decides not to go ahead | They can **withdraw it themselves** at any time before the decision, giving a short reason; audited like staff withdrawals. |
+| SS-11 | A colleague wants to help before approval | **One applicant account per application.** Colleagues are added by the Company Administrator after approval. |
+| SS-12 | The application is declined | The applicant **keeps the account**, sees the reasons and appeal deadline, and may appeal (Release 1.1) or start a new application. |
+| SS-13 | Where sign-up starts | **Both:** "Register your company" on the website opens the Create account page directly, and the sign-in page keeps a "Registering a bus company? Create an account" link, with notes for travellers and staff. |
+| SS-14 | A traveller creates an account by mistake | After confirming their email they are told the account is for bus companies and that travellers can book as guests, with a way back to the home page and a way to close the account. |
+| SS-15 | A staff member signed up themselves before being set up | The administrator **reuses that account** (found by email) and grants the staff role; recorded in the audit trail. A self-created account never gains a role by itself. |
+| SS-16 | An account is created but no application is ever started | Warning email at 75 days; **deleted at 90 days** if still no application (data minimisation, Data Protection Act). |
+
+**Build progress (28 November 2026).** Step 1 of the self-service build is in place: account creation, email confirmation and password reset on the sign-in service with TransitHub's look (`keycloak-theme/transithub`, set up by `scripts/keycloak/setup-dev-signup.ps1`); `POST /api/v1/me/account` registers a person with a confirmed email as a TransitHub user **with no roles** (refused with `email-not-verified` otherwise; audited as `user.self-registered`); the app shows applicants an "Account ready" home instead of the staff work queue. Next: applicant ownership of an application (step 2) and the applicant API (step 3).
+
+**Build progress (28 November 2026, steps 2 and 3).** Self-service applications belong to their applicant (`applicant_user_id`, channel `SELF_SERVICE`, migration V16). A signed-in user without any role runs in the new **applicant scope**; row-level security then shows and changes only their own application, its representatives, documents, signatures, submissions and history, and lets them write audit events about it only. One open application per applicant (unique index; 409 `application-already-open`). Applicant API `/api/v1/my/applications`: start, view with progress timeline, details, directors, documents (upload, download, remove), on-screen signature (SS-4 fallback), submit (duplicates flagged afterwards in platform scope and never shown to the applicant), take back before checking starts (SS-9), withdraw with a reason (SS-10). Responses never show who is checking, internal notes or duplicates. Tests: `ApplicantApplicationIntegrationTest` (journey, take-back refused once checking starts, cross-applicant isolation through the API and directly in the database, one open application, staff refused, incomplete submission).
+Still to build for self-service: answering information requests in the account (SS-8), director signing links (SS-4, needs #13), approval making the applicant Company Administrator (SS-2) with the authenticator step (SS-6), and the applicant screens (step 6).
+
+**Build progress (28 November 2026, step 6).** Applicant screens: the account home starts an application or continues the open one (earlier ones listed); "My application" (`/application/:id`) shows the stage in plain words with a four-step progress bar, the checklist, company details, directors and owners (add, edit, remove, sign on screen), documents (upload, download, remove), the history, and Submit, Make changes (take back) and Withdraw with confirmations; a decline shows its reasons and the appeal deadline. The staff capture dialogs are reused through a per-application API base path, with applicant wording and no "declines to sign" option.

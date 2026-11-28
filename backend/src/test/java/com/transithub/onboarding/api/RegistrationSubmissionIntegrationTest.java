@@ -106,7 +106,7 @@ class RegistrationSubmissionIntegrationTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("registration-incomplete"))
                 .andExpect(jsonPath("$.missing", hasItem("company.registrationNumber")))
-                .andExpect(jsonPath("$.missing", hasItem("evidence.atLeastOne")));
+                .andExpect(jsonPath("$.missing", hasItem("evidence.operatingLicence")));
 
         mockMvc.perform(get("/api/v1/registrations/" + id).with(joseph.token()))
                 .andExpect(jsonPath("$.status").value("DRAFT"));
@@ -221,21 +221,25 @@ class RegistrationSubmissionIntegrationTest {
                         .content("""
                                 {"deviceId": "tablet-test", "items": [{"id": "%s", "snapshot": {
                                   "details": {"legalName": "%s", "registrationNumber": "%s",
+                                              "operatingLicenceNumber": "RSL-%s",
                                               "businessType": "Bus operator", "province": "Lusaka",
                                               "district": "%s", "physicalAddress": "Plot 1, Main Road",
                                               "contactPhone": "+260971000001"},
                                   "representatives": [{"id": "%s", "fullName": "Mr Banda", "idDocumentType": "NRC",
                                               "idDocumentNumber": "123456/10/1", "capacity": "Director",
                                               "phone": "+260971000002", "primaryContact": true}]}}]}
-                                """.formatted(id, legalName, registrationNumber, district, representative)))
+                                """.formatted(id, legalName, registrationNumber, registrationNumber, district,
+                                        representative)))
                 .andExpect(jsonPath("$.results[0].outcome").value("CREATED"));
 
-        mockMvc.perform(multipart("/api/v1/registrations/" + id + "/evidence")
-                        .file(new MockMultipartFile("file", "certificate.pdf", "application/pdf", PDF))
-                        .param("version", String.valueOf(version(id)))
-                        .param("evidenceType", "CERTIFICATE_OF_INCORPORATION")
-                        .with(joseph.token()))
-                .andExpect(status().isCreated());
+        for (String type : new String[] {"CERTIFICATE_OF_INCORPORATION", "OPERATING_LICENCE"}) {
+            mockMvc.perform(multipart("/api/v1/registrations/" + id + "/evidence")
+                            .file(new MockMultipartFile("file", type.toLowerCase() + ".pdf", "application/pdf", PDF))
+                            .param("version", String.valueOf(version(id)))
+                            .param("evidenceType", type)
+                            .with(joseph.token()))
+                    .andExpect(status().isCreated());
+        }
 
         mockMvc.perform(multipart("/api/v1/registrations/" + id + "/representatives/" + representative + "/acknowledgement")
                         .file(new MockMultipartFile("signature", "signature.png", "image/png", PNG))

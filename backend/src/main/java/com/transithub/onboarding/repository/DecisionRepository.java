@@ -31,63 +31,10 @@ public class DecisionRepository {
         this.jdbc = jdbc;
     }
 
-    /** Everyone who did verification work on the registration (they may not review or decide). */
-    public Set<String> verificationParticipants(UUID registrationId) {
-        return Set.copyOf(jdbc.sql("""
-                SELECT assignee FROM verification_assignment WHERE registration_id = :id
-                UNION SELECT assessed_by FROM evidence_assessment WHERE registration_id = :id
-                UNION SELECT requested_by FROM information_request WHERE registration_id = :id
-                UNION SELECT recommended_by FROM verification_recommendation WHERE registration_id = :id
-                UNION SELECT reviewed_by FROM registration_duplicate_flag
-                       WHERE registration_id = :id AND reviewed_by IS NOT NULL
-                """)
-                .param("id", registrationId)
-                .query(String.class)
-                .list());
-    }
 
-    /** Everyone who reviewed a recommendation on the registration (they may not decide). */
-    public Set<String> reviewers(UUID registrationId) {
-        return Set.copyOf(jdbc.sql("SELECT reviewed_by FROM recommendation_review WHERE registration_id = :id")
-                .param("id", registrationId)
-                .query(String.class)
-                .list());
-    }
 
-    public Optional<UUID> currentRecommendation(UUID registrationId) {
-        return jdbc.sql("""
-                SELECT id FROM verification_recommendation
-                 WHERE registration_id = :id AND superseded_at IS NULL
-                 ORDER BY recommended_at DESC LIMIT 1
-                """)
-                .param("id", registrationId)
-                .query(UUID.class)
-                .optional();
-    }
 
-    public void supersedeRecommendation(UUID recommendationId, Instant now) {
-        jdbc.sql("UPDATE verification_recommendation SET superseded_at = :now WHERE id = :id")
-                .param("now", Timestamp.from(now))
-                .param("id", recommendationId)
-                .update();
-    }
 
-    public void saveReview(UUID registrationId, UUID recommendationId, String outcome, @Nullable String comments,
-                           String reviewedBy, Instant now) {
-        jdbc.sql("""
-                INSERT INTO recommendation_review
-                    (id, registration_id, recommendation_id, outcome, comments, reviewed_by, reviewed_at)
-                VALUES (:id, :registrationId, :recommendationId, :outcome, :comments, :reviewedBy, :now)
-                """)
-                .param("id", UuidV7.generate())
-                .param("registrationId", registrationId)
-                .param("recommendationId", recommendationId)
-                .param("outcome", outcome)
-                .param("comments", comments)
-                .param("reviewedBy", reviewedBy)
-                .param("now", Timestamp.from(now))
-                .update();
-    }
 
     public List<Review> reviews(UUID registrationId) {
         return jdbc.sql("""

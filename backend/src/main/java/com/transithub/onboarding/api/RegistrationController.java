@@ -1,12 +1,20 @@
 package com.transithub.onboarding.api;
 
 import java.net.URI;
+import java.time.Instant;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -25,9 +33,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.transithub.identity.StaffDirectory;
 import com.transithub.onboarding.domain.CompanyRegistration;
 import com.transithub.onboarding.domain.Declaration;
 import com.transithub.onboarding.domain.EvidenceType;
+import com.transithub.onboarding.domain.RegistrationStatus;
+import com.transithub.onboarding.repository.CompanyRegistrationRepository;
 import com.transithub.onboarding.repository.RegistrationSubmissionRepository;
 import com.transithub.onboarding.service.RegistrationService;
 
@@ -47,10 +58,13 @@ class RegistrationController {
 
     private final RegistrationService registrations;
     private final RegistrationResponseFactory responses;
+    private final StaffDirectory staff;
 
-    RegistrationController(RegistrationService registrations, RegistrationResponseFactory responses) {
+    RegistrationController(RegistrationService registrations, RegistrationResponseFactory responses,
+                           StaffDirectory staff) {
         this.registrations = registrations;
         this.responses = responses;
+        this.staff = staff;
     }
 
     @PostMapping
@@ -63,6 +77,52 @@ class RegistrationController {
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(registration.getId()).toUri();
         return ResponseEntity.created(location).body(responses.from(registration));
+    }
+
+    /** Page size limit for work queues. */
+    static final int MAX_PAGE_SIZE = 100;
+
+    record ListItemResponse(UUID id, String reference, String status, @Nullable String legalName,
+                            @Nullable String district, String capturedBy, @Nullable String capturedByName,
+                            @Nullable String assignedVerifier, @Nullable String assignedVerifierName,
+                            Instant updatedAt) {
+    }
+
+    record ListResponse(List<ListItemResponse> items, long total, int page, int size) {
+    }
+
+    /**
+     * Work queues for staff (UC-01.01-17, staff view): the registrations the
+     * caller may see, newest change first, optionally limited to some
+     * statuses and narrowed by a search over reference and legal name.
+     */
+    @GetMapping
+    ListResponse list(@RequestParam(name = "status", required = false) @Nullable List<RegistrationStatus> statuses,
+                      @RequestParam(required = false) @Nullable String search,
+                      @RequestParam(defaultValue = "0") int page,
+                      @RequestParam(defaultValue = "25") int size) {
+        PageRequest pageRequest = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE));
+        Set<RegistrationStatus> wanted = statuses == null || statuses.isEmpty()
+                ? Set.of() : EnumSet.copyOf(statuses);
+        Page<CompanyRegistrationRepository.ListItem> result = registrations.list(wanted, search, pageRequest);
+
+        Set<String> people = new HashSet<>();
+        result.forEach(item -> {
+            people.add(item.capturedBy());
+            if (item.assignedVerifier() != null) {
+                people.add(item.assignedVerifier());
+            }
+        });
+        Map<String, String> names = staff.displayNames(people);
+        List<ListItemResponse> items = result.stream()
+                .map(item -> new ListItemResponse(item.id(), item.reference(), item.status().name(),
+                        item.legalName(), item.district(), item.capturedBy(), names.get(item.capturedBy()),
+                        item.assignedVerifier(),
+                        item.assignedVerifier() == null ? null : names.get(item.assignedVerifier()),
+                        item.updatedAt()))
+                .toList();
+        return new ListResponse(items, result.getTotalElements(), pageRequest.getPageNumber(),
+                pageRequest.getPageSize());
     }
 
     /** The declaration representatives sign; its version is sent back with the signature. */

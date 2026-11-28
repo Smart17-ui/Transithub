@@ -5,13 +5,17 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +30,7 @@ import com.transithub.onboarding.domain.Evidence;
 import com.transithub.onboarding.domain.EvidenceType;
 import com.transithub.onboarding.domain.RegistrationChannel;
 import com.transithub.onboarding.domain.RegistrationHistory;
+import com.transithub.onboarding.domain.RegistrationStatus;
 import com.transithub.onboarding.domain.Representative;
 import com.transithub.onboarding.domain.RepresentativeDetails;
 import com.transithub.onboarding.domain.SubmittedVersion;
@@ -341,8 +346,8 @@ public class RegistrationService {
 
     /**
      * A registration the caller may see: with {@code registration.view-all}
-     * any; otherwise those they captured or are assigned to verify, and,
-     * for reviewers and approvers, those at the decision stage.
+     * any; otherwise those they captured or are assigned to check, and, for
+     * checkers, submitted registrations waiting to be taken.
      * Anything else is "not found".
      */
     CompanyRegistration visible(UUID id) {
@@ -351,17 +356,29 @@ public class RegistrationService {
 
         String actor = currentActor.id();
         boolean mine = registration.getCapturedBy().equals(actor) || actor.equals(registration.getAssignedVerifier());
-        // Reviewers and approvers work from the recommendation stage onwards.
-        boolean decisionStage = java.util.EnumSet.of(com.transithub.onboarding.domain.RegistrationStatus.RECOMMENDED,
-                        com.transithub.onboarding.domain.RegistrationStatus.APPROVED,
-                        com.transithub.onboarding.domain.RegistrationStatus.REJECTED).contains(registration.getStatus())
-                && (authorization.has(Permission.REGISTRATION_REVIEW_RECOMMENDATION)
-                    || authorization.has(Permission.REGISTRATION_APPROVE)
-                    || authorization.has(Permission.REGISTRATION_REJECT));
-        if (!mine && !decisionStage && !authorization.has(Permission.REGISTRATION_VIEW_ALL)) {
+        boolean waitingForAChecker = registration.getStatus() == RegistrationStatus.SUBMITTED
+                && authorization.has(Permission.REGISTRATION_VERIFY);
+        if (!mine && !waitingForAChecker && !authorization.has(Permission.REGISTRATION_VIEW_ALL)) {
             throw new RegistrationNotFoundException("Registration", id);
         }
         return registration;
+    }
+
+    /**
+     * A work queue: registrations in the given statuses (all statuses when
+     * empty) that the caller may see under the same rule as {@link #visible},
+     * optionally narrowed by a search over reference and legal name.
+     */
+    @Transactional(readOnly = true)
+    public Page<CompanyRegistrationRepository.ListItem> list(Set<RegistrationStatus> statuses,
+                                                             @Nullable String search, Pageable page) {
+        authorization.require(Permission.REGISTRATION_VIEW);
+        Set<RegistrationStatus> wanted = statuses.isEmpty() ? EnumSet.allOf(RegistrationStatus.class) : statuses;
+        String term = search == null ? "" : search.strip().toLowerCase(java.util.Locale.ROOT);
+        String pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return registrations.findVisible(wanted, pattern, currentActor.id(),
+                authorization.has(Permission.REGISTRATION_VIEW_ALL),
+                authorization.has(Permission.REGISTRATION_VERIFY), RegistrationStatus.SUBMITTED, page);
     }
 
     /** Visible, and the client's copy is current (ADR-0007). */

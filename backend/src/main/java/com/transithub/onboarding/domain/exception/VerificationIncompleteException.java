@@ -11,7 +11,7 @@ public class VerificationIncompleteException extends RuntimeException {
     private final List<String> missing;
 
     public VerificationIncompleteException(List<String> missing) {
-        super("Verification is not complete: " + missing.size() + " item(s) outstanding.");
+        super("This application cannot be approved until all requirements are met (" + missing.size() + " outstanding).");
         this.missing = List.copyOf(missing);
     }
 

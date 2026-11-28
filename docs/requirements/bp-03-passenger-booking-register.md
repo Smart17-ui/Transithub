@@ -74,6 +74,28 @@ The reference labels were reconstructed and have not been verified as the origin
 - Online sales and physical-agent sales are distinguished.
 - Original booking and ticket history is preserved through later cancellations, refunds and adjustments.
 
+### J. Guest and passenger-account access (BP-03.01) — Approved 27 Nov 2026
+- **Guests may book without an account.** They give a name and phone number; the ticket is sent by SMS.
+- **A guest returns to a booking with its reference and phone number, confirmed by a one-time SMS code** sent to that number. Only the person holding the phone can change or cancel it.
+- **Passenger accounts use phone number + one-time SMS code** (no password). Email may be added later for receipts.
+- **Guest bookings are linked to a new account automatically** once the passenger proves ownership of the same phone number with an SMS code.
+- Passengers sign in from the booking pages. The site header's "Sign in" is for TransitHub staff and transport-company users (decision A keeps the two account types separate).
+- *Not yet numbered rules; to be confirmed when BP-03 rule IDs are assigned. SMS provider must satisfy the data-protection answers (ADR-0017).*
+
+### K. Payouts only to the operator's own verified account — Approved 27 Nov 2026
+- Ticket money from marketplace sales is paid only to a mobile-money or bank account **in the company's name or a director's name**, verified before the company may sell through the marketplace.
+- Purpose: a fraudulent operator cannot divert passengers' money to an untraceable account. Settlement itself belongs to BP-09.
+
+### L. Multi-channel ticket delivery — Product owner direction, 27 Nov 2026
+- The ticket is issued **immediately after payment is confirmed** (consistent with decisions D and F).
+- Delivery channels, any combination of which the passenger may choose where the company supports them:
+  1. **Digital ticket** in the passenger account, or through a secure booking-confirmation link (guests).
+  2. **Email**: the ticket, or a secure retrieval link, when an email address is provided.
+  3. **SMS**: confirmation with the ticket reference and a secure retrieval link where supported. SMS must not expose sensitive booking details.
+  4. **Printed ticket** at physical booking offices immediately after purchase.
+- Passengers can **download, print or retrieve** their ticket later; no passenger depends on a single channel.
+- *To be confirmed as numbered rules with the BP-03 rule IDs; SMS and email providers must satisfy the data-protection answers (ADR-0017).*
+
 ## 3. Ownership boundary: BP-03 and BP-09 — Approved
 
 | BP-03 Passenger Booking and Ticketing | BP-09 Financial Management |

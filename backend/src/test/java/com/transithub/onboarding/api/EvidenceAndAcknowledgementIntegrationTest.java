@@ -94,7 +94,8 @@ class EvidenceAndAcknowledgementIntegrationTest {
                 .andExpect(jsonPath("$.evidence[0].evidenceType").value("CERTIFICATE_OF_INCORPORATION"))
                 .andExpect(jsonPath("$.evidence[0].contentType").value("application/pdf"))
                 .andExpect(jsonPath("$.evidence[0].fileName").value("certificate.pdf"))
-                .andExpect(jsonPath("$.missingForSubmission", not(hasItem("evidence.atLeastOne"))));
+                .andExpect(jsonPath("$.missingForSubmission", not(hasItem("evidence.certificateOfIncorporation"))))
+                .andExpect(jsonPath("$.missingForSubmission", hasItem("evidence.operatingLicence")));
 
         String evidenceId = JsonPath.read(getRegistration(), "$.evidence[0].id");
         MvcResult download = mockMvc.perform(get("/api/v1/registrations/" + registrationId
@@ -150,7 +151,7 @@ class EvidenceAndAcknowledgementIntegrationTest {
                         .param("version", String.valueOf(version())).with(joseph.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.evidence", hasSize(0)))
-                .andExpect(jsonPath("$.missingForSubmission", hasItem("evidence.atLeastOne")));
+                .andExpect(jsonPath("$.missingForSubmission", hasItem("evidence.certificateOfIncorporation")));
 
         assertEquals(1, jdbc.sql("SELECT COUNT(*) FROM registration_evidence WHERE id = :id AND removed_at IS NOT NULL")
                 .param("id", UUID.fromString(evidenceId)).query(Integer.class).single());

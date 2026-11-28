@@ -21,8 +21,6 @@ public enum Permission {
     REGISTRATION_RESOLVE_SYNC_CONFLICT("registration.resolve-sync-conflict"),
     REGISTRATION_VERIFY("registration.verify"),
     REGISTRATION_REQUEST_INFORMATION("registration.request-information"),
-    REGISTRATION_RECOMMEND("registration.recommend"),
-    REGISTRATION_REVIEW_RECOMMENDATION("registration.review-recommendation"),
     REGISTRATION_APPROVE("registration.approve"),
     REGISTRATION_REJECT("registration.reject"),
 
@@ -30,6 +28,9 @@ public enum Permission {
     COMPANY_VIEW("company.view"),
     /** Issue or reissue the first Company Administrator invitation (AC-R1-EST-06). */
     COMPANY_INVITE_ADMINISTRATOR("company.invite-administrator"),
+
+    // Website enquiries (Contact form): read and mark resolved
+    ENQUIRY_MANAGE("enquiry.manage"),
 
     // Platform administration
     PLATFORM_USER_MANAGE("platform-user.manage"),

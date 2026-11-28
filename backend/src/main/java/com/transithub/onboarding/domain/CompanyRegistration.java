@@ -15,7 +15,6 @@ import org.springframework.data.domain.Persistable;
 
 import com.transithub.onboarding.domain.exception.InvalidRegistrationStateException;
 import com.transithub.onboarding.domain.exception.NotAssignedVerifierException;
-import com.transithub.onboarding.domain.exception.RecommendationNotEndorsedException;
 import com.transithub.onboarding.domain.exception.VerificationIncompleteException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
 import com.transithub.onboarding.domain.exception.RegistrationNotFoundException;
@@ -67,6 +66,10 @@ public class CompanyRegistration implements Persistable<UUID> {
     @Column(name = "captured_by", nullable = false, updatable = false)
     private String capturedBy;
 
+    /** Self-service only: the TransitHub user who applies and owns this application (SS-1). */
+    @Column(name = "applicant_user_id", updatable = false)
+    private @Nullable UUID applicantUserId;
+
     /** Increases on every material change; acknowledgements refer to it (AC-R1-ACK-03). */
     @Column(name = "content_revision", nullable = false)
     private int contentRevision;
@@ -82,10 +85,6 @@ public class CompanyRegistration implements Persistable<UUID> {
     /** The Verification Officer currently responsible (AC-R1-VER-01). */
     @Column(name = "assigned_verifier")
     private @Nullable String assignedVerifier;
-
-    /** The independent reviewer who endorsed the current recommendation (BR-ONB-062). */
-    @Column(name = "recommendation_endorsed_by")
-    private @Nullable String recommendationEndorsedBy;
 
     /** After a rejection: the last moment an appeal may be lodged (AC-R1-DEC-04). */
     @Column(name = "appeal_deadline")
@@ -157,6 +156,30 @@ public class CompanyRegistration implements Persistable<UUID> {
         registration.pendingStatusChanges.add(new RegistrationHistory.StatusChange(
                 id, null, RegistrationStatus.DRAFT, actor, null, now));
         return registration;
+    }
+
+    /**
+     * Self-service (Release 1 §9, SS-1): the applicant starts their own application.
+     * They are its capturer and its owner.
+     */
+    public static CompanyRegistration startApplication(
+            UUID id, String reference, CompanyDetails details, UUID applicantUserId, Instant now) {
+        CompanyRegistration registration = startDraft(id, reference, RegistrationChannel.SELF_SERVICE, details,
+                Objects.requireNonNull(applicantUserId, "applicantUserId").toString(), now);
+        registration.applicantUserId = applicantUserId;
+        return registration;
+    }
+
+    /**
+     * SS-9: the applicant takes a submitted application back to correct it, which is
+     * possible only while no Compliance Officer has started checking it. The submitted
+     * version stays on record; submitting again stores a new one.
+     */
+    public void returnToDraft(String actor, Instant now) {
+        if (status != RegistrationStatus.SUBMITTED || assignedVerifier != null) {
+            throw new InvalidRegistrationStateException("take back", status);
+        }
+        changeStatus(RegistrationStatus.DRAFT, actor, "Taken back by the applicant to make corrections", now);
     }
 
     /** Correct or complete the company details of a draft (AC-R1-CAP-05). */
@@ -400,51 +423,25 @@ public class CompanyRegistration implements Persistable<UUID> {
         changeStatus(RegistrationStatus.UNDER_VERIFICATION, actor, null, now);
     }
 
+    // --- decision: the checker who verified decides (decision log, 27 Nov 2026) ---------
+
     /**
-     * AC-R1-VER-07: the verifier completes verification with a
-     * recommendation. {@code outstanding} is what the service found still
-     * unassessed or unreviewed; it must be empty.
+     * Approval by the assigned checker, after their checks are complete.
+     * {@code outstanding} is what the service found still unchecked; it must be
+     * empty. {@code establishedCompanyId} is created in the same transaction.
      */
-    public void recommend(List<String> outstanding, String actor, Instant now) {
-        requireAssignedVerifierAt(RegistrationStatus.UNDER_VERIFICATION, actor, "recommend on");
+    public void approve(UUID establishedCompanyId, List<String> outstanding, String actor, String rationale, Instant now) {
+        requireAssignedVerifierAt(RegistrationStatus.UNDER_VERIFICATION, actor, "approve");
         if (!outstanding.isEmpty()) {
             throw new VerificationIncompleteException(outstanding);
         }
-        recommendationEndorsedBy = null;
-        changeStatus(RegistrationStatus.RECOMMENDED, actor, null, now);
-    }
-
-    // --- review and decision (UC-01.01-11, -12; AC-R1-DEC-01…05) -----------------
-
-    /** AC-R1-DEC-01: an independent reviewer endorses the recommendation. */
-    public void endorseRecommendation(String actor, Instant now) {
-        requireStatus(RegistrationStatus.RECOMMENDED, "review the recommendation of");
-        if (recommendationEndorsedBy != null) {
-            throw new InvalidRegistrationStateException("review again an already endorsed recommendation on", status);
-        }
-        recommendationEndorsedBy = actor;
-        updatedAt = now;
-    }
-
-    /** AC-R1-DEC-02: the reviewer challenges it; it goes back to the verifier. */
-    public void challengeRecommendation(String actor, String comments, Instant now) {
-        requireStatus(RegistrationStatus.RECOMMENDED, "review the recommendation of");
-        if (recommendationEndorsedBy != null) {
-            throw new InvalidRegistrationStateException("challenge an already endorsed recommendation on", status);
-        }
-        changeStatus(RegistrationStatus.UNDER_VERIFICATION, actor, comments, now);
-    }
-
-    /** AC-R1-DEC-03: approval; {@code establishedCompanyId} is created in the same transaction. */
-    public void approve(UUID establishedCompanyId, String actor, String rationale, Instant now) {
-        requireEndorsedRecommendation("approve");
         companyId = Objects.requireNonNull(establishedCompanyId);
         changeStatus(RegistrationStatus.APPROVED, actor, rationale, now);
     }
 
-    /** AC-R1-DEC-04: rejection with reasons; an appeal may be lodged until {@code appealDeadline}. */
+    /** Rejection by the assigned checker, with reasons; an appeal may be lodged until {@code appealDeadline}. */
     public void reject(String actor, String reasons, Instant appealDeadline, Instant now) {
-        requireEndorsedRecommendation("reject");
+        requireAssignedVerifierAt(RegistrationStatus.UNDER_VERIFICATION, actor, "reject");
         this.appealDeadline = Objects.requireNonNull(appealDeadline);
         changeStatus(RegistrationStatus.REJECTED, actor, reasons, now);
     }
@@ -458,19 +455,6 @@ public class CompanyRegistration implements Persistable<UUID> {
             case DRAFT, SUBMITTED, UNDER_VERIFICATION, AWAITING_INFORMATION, RECOMMENDED ->
                     changeStatus(RegistrationStatus.WITHDRAWN, actor, reason.trim(), now);
             default -> throw new InvalidRegistrationStateException("withdraw", status);
-        }
-    }
-
-    private void requireEndorsedRecommendation(String action) {
-        requireStatus(RegistrationStatus.RECOMMENDED, action);
-        if (recommendationEndorsedBy == null) {
-            throw new RecommendationNotEndorsedException();
-        }
-    }
-
-    private void requireStatus(RegistrationStatus required, String action) {
-        if (status != required) {
-            throw new InvalidRegistrationStateException(action, status);
         }
     }
 
@@ -551,6 +535,7 @@ public class CompanyRegistration implements Persistable<UUID> {
         List<String> missing = new ArrayList<>();
         if (details.legalName() == null) missing.add("company.legalName");
         if (details.registrationNumber() == null) missing.add("company.registrationNumber");
+        if (details.operatingLicenceNumber() == null) missing.add("company.operatingLicenceNumber");
         if (details.businessType() == null) missing.add("company.businessType");
         if (details.district() == null) missing.add("company.district");
         if (details.physicalAddress() == null) missing.add("company.physicalAddress");
@@ -583,8 +568,12 @@ public class CompanyRegistration implements Persistable<UUID> {
         if (openConflictId != null) {
             missing.add("sync.openConflict");
         }
-        if (activeEvidence().isEmpty()) {
-            missing.add("evidence.atLeastOne");
+        // Traceability: the documents behind the two numbers checked at source (PACRA, licensing authority).
+        if (activeEvidence().stream().noneMatch(e -> e.getEvidenceType() == EvidenceType.CERTIFICATE_OF_INCORPORATION)) {
+            missing.add("evidence.certificateOfIncorporation");
+        }
+        if (activeEvidence().stream().noneMatch(e -> e.getEvidenceType() == EvidenceType.OPERATING_LICENCE)) {
+            missing.add("evidence.operatingLicence");
         }
         return missing;
     }
@@ -737,6 +726,10 @@ public class CompanyRegistration implements Persistable<UUID> {
         return channel;
     }
 
+    public @Nullable UUID getApplicantUserId() {
+        return applicantUserId;
+    }
+
     public String getCapturedBy() {
         return capturedBy;
     }
@@ -755,10 +748,6 @@ public class CompanyRegistration implements Persistable<UUID> {
 
     public @Nullable String getAssignedVerifier() {
         return assignedVerifier;
-    }
-
-    public @Nullable String getRecommendationEndorsedBy() {
-        return recommendationEndorsedBy;
     }
 
     public @Nullable Instant getAppealDeadline() {

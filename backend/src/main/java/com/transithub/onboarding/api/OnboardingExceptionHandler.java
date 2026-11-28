@@ -7,7 +7,6 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.transithub.onboarding.domain.exception.RecommendationNotEndorsedException;
 import com.transithub.onboarding.domain.exception.DeclarationOutdatedException;
 import com.transithub.onboarding.domain.exception.UploadRejectedException;
 import com.transithub.onboarding.domain.exception.InvalidRegistrationInputException;
@@ -33,7 +32,6 @@ import static com.transithub.shared.web.ProblemCodes.problem;
 class OnboardingExceptionHandler {
 
     static final String REGISTRATION_ALREADY_EXISTS = "registration-already-exists";
-    static final String RECOMMENDATION_NOT_ENDORSED = "recommendation-not-endorsed";
     static final String INVITATION_INVALID = "invitation-invalid";
     static final String INVITATION_EXPIRED = "invitation-expired";
 
@@ -42,6 +40,16 @@ class OnboardingExceptionHandler {
         return exception.reason() == InvitationRejectedException.Reason.EXPIRED
                 ? problem(HttpStatus.GONE, "Invitation expired", exception.getMessage(), INVITATION_EXPIRED)
                 : problem(HttpStatus.NOT_FOUND, "Invitation not valid", exception.getMessage(), INVITATION_INVALID);
+    }
+
+    static final String APPLICATION_ALREADY_OPEN = "application-already-open";
+
+    @ExceptionHandler(com.transithub.onboarding.domain.exception.ApplicationAlreadyOpenException.class)
+    ProblemDetail applicationAlreadyOpen(com.transithub.onboarding.domain.exception.ApplicationAlreadyOpenException exception) {
+        ProblemDetail body = problem(HttpStatus.CONFLICT, "Application already in progress", exception.getMessage(),
+                APPLICATION_ALREADY_OPEN);
+        body.setProperty("applicationId", exception.openApplicationId());
+        return body;
     }
 
     @ExceptionHandler(UserProvisioning.AccountDisabledException.class)
@@ -108,12 +116,6 @@ class OnboardingExceptionHandler {
     ProblemDetail declarationOutdated(DeclarationOutdatedException exception) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Declaration outdated", exception.getMessage(),
                 DECLARATION_OUTDATED);
-    }
-
-    @ExceptionHandler(RecommendationNotEndorsedException.class)
-    ProblemDetail notEndorsed(RecommendationNotEndorsedException exception) {
-        return problem(HttpStatus.CONFLICT, "Recommendation not endorsed", exception.getMessage(),
-                RECOMMENDATION_NOT_ENDORSED);
     }
 
     @ExceptionHandler(RegistrationNotFoundException.class)

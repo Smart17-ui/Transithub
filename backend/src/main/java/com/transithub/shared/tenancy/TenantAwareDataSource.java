@@ -25,7 +25,8 @@ import org.springframework.stereotype.Component;
 public class TenantAwareDataSource extends DelegatingDataSource {
 
     private static final String APPLY_SCOPE =
-            "SELECT set_config('app.scope', ?, false), set_config('app.company_id', ?, false)";
+            "SELECT set_config('app.scope', ?, false), set_config('app.company_id', ?, false), "
+                    + "set_config('app.user_id', ?, false)";
 
     public TenantAwareDataSource(DataSource target) {
         super(target);
@@ -46,6 +47,7 @@ public class TenantAwareDataSource extends DelegatingDataSource {
         try (PreparedStatement statement = connection.prepareStatement(APPLY_SCOPE)) {
             statement.setString(1, scope.databaseScope());
             statement.setString(2, scope.databaseCompanyId());
+            statement.setString(3, scope.databaseUserId());
             statement.execute();
             return connection;
         } catch (SQLException | RuntimeException e) {

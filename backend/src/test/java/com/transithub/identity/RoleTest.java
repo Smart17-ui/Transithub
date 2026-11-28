@@ -13,16 +13,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RoleTest {
 
     @Test
-    void noSingleRoleCanBothVerifyAndDecide() {
-        // Separation of duties starts with role design: verify, review and
-        // decide are always different roles.
+    void noSingleRoleCanBothCaptureAndDecide() {
+        // Since 27 Nov 2026 one checker verifies and decides; the separation
+        // that remains is between entering a registration and deciding on it.
         for (Role role : Role.values()) {
             Set<Permission> p = role.permissions();
-            assertFalse(p.contains(Permission.REGISTRATION_VERIFY) && p.contains(Permission.REGISTRATION_APPROVE), role.name());
-            assertFalse(p.contains(Permission.REGISTRATION_VERIFY) && p.contains(Permission.REGISTRATION_REVIEW_RECOMMENDATION), role.name());
-            assertFalse(p.contains(Permission.REGISTRATION_REVIEW_RECOMMENDATION) && p.contains(Permission.REGISTRATION_APPROVE), role.name());
             assertFalse(p.contains(Permission.REGISTRATION_CAPTURE) && p.contains(Permission.REGISTRATION_VERIFY), role.name());
+            assertFalse(p.contains(Permission.REGISTRATION_CAPTURE) && p.contains(Permission.REGISTRATION_APPROVE), role.name());
         }
+    }
+
+    @Test
+    void theCheckerVerifiesAndDecides() {
+        assertTrue(Role.VERIFICATION_OFFICER.grants(Permission.REGISTRATION_VERIFY));
+        assertTrue(Role.VERIFICATION_OFFICER.grants(Permission.REGISTRATION_APPROVE));
+        assertTrue(Role.VERIFICATION_OFFICER.grants(Permission.REGISTRATION_REJECT));
     }
 
     @Test
@@ -33,9 +38,6 @@ class RoleTest {
         assertTrue(Role.REGISTRATION_SUPERVISOR.grants(Permission.REGISTRATION_RESOLVE_SYNC_CONFLICT));
         assertTrue(Role.VERIFICATION_OFFICER.grants(Permission.REGISTRATION_VERIFY));
         assertTrue(Role.VERIFICATION_OFFICER.grants(Permission.REGISTRATION_REQUEST_INFORMATION));
-        assertTrue(Role.RECOMMENDATION_REVIEWER.grants(Permission.REGISTRATION_REVIEW_RECOMMENDATION));
-        assertTrue(Role.REGISTRATION_APPROVER.grants(Permission.REGISTRATION_APPROVE));
-        assertTrue(Role.REGISTRATION_APPROVER.grants(Permission.REGISTRATION_REJECT));
         assertTrue(Role.PLATFORM_ADMINISTRATOR.grants(Permission.ROLE_ASSIGN));
     }
 

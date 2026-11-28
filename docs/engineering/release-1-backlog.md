@@ -123,6 +123,10 @@
 **Labels:** `frontend`. Depends on #8 and #14.
 - Field capture and sync screens, back-office queues and registration detail, decisions, invitation acceptance, audit view.
 - **In progress:** first online staff-workspace slice is in `frontend/`: Keycloak sign-in, registration create/reopen/edit, server-driven actions, withdrawal, and audit history. Offline capture remains gated by the #8 device trial.
+- **Back-office slice done (27 Nov 2026):** work queue with stage tabs, counts and search; registration page with lifecycle progress, representatives, evidence (download, assessment), duplicate review, verifier assignment (only eligible people offered), information request and response with document upload, recommendation, review (endorse/challenge), approve (shows the `TH-ZM` code) and reject (shows the appeal deadline); names instead of user ids throughout. Backend support: `GET /api/v1/registrations` (same visibility rule as opening one), `GET …/{id}/verifier-candidates`, `GET /api/v1/staff/names` (`WorkQueueIntegrationTest`, 193 tests).
+- **Draft capture done (27 Nov 2026):** submission checklist in four steps (company, representatives, documents, signatures), add/edit/remove representatives, attach/remove documents (client-side type and 10 MB checks), on-screen signature pad with the declaration, refusal with reason. Every page says who acts next. Screens follow the user's permissions from the new `GET /api/v1/me` (`MeIntegrationTest`). Light and dark mode with a header switch (follows the device until chosen).
+- **Still to do here:** sync-conflict resolution and quarantine screens (#7a), invitation acceptance page for the new Company Administrator.
+- **Public website done (27 Nov 2026):** Home, Services, About and Contact pages written for passengers and bus companies (no technical terms), mobile menu, light/dark mode. **Contact form** stores enquiries (`POST /api/v1/public/enquiries`, the only public write; V15 `contact_enquiry` with consent; hidden spam field; 5 messages per 10 minutes per address) and staff read and resolve them in the **Enquiries** inbox (`enquiry.manage`: Platform Administrator, Onboarding Supervisor). Tests: `EnquiryIntegrationTest`, `SubmissionRateLimiterTest`. The team is notified through the outbox (`team:support`), which is delivered once #13 exists.
 
 ### #16 Step 7: demo script on a real tablet
 **Labels:** `quality`
@@ -132,3 +136,15 @@
 - 10 findings (6 important, 4 minor), all confirmed and fixed, each with a regression test (`ReviewFindingsRegressionTest`, `RegistrationSyncServiceTest`). 183 tests.
 **Labels:** `quality`
 - Before merging each step, run an independent review pass (for example `/code-review`) and fix confirmed findings.
+
+### #4 addendum (28 Nov 2026, decision SS-15)
+- When an administrator sets up a staff member whose email already has a self-created account, **reuse that account** and grant the role (audited). Never create a second login for the same email.
+
+### #18 Clean up unused applicant accounts (decision SS-16)
+**Labels:** `backend`
+- A scheduled job finds accounts with no roles and no application: warning email at 75 days, deletion (TransitHub record and sign-in account) at 90 days, audited.
+- **Done when:** no unused applicant account is kept longer than 90 days.
+
+### #19 Close my account (decision SS-14)
+**Labels:** `backend`, `frontend`
+- An applicant with no application can close their own account. Until then, "Ask us to close it" goes through the Contact page.

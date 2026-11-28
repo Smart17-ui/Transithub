@@ -11,6 +11,9 @@ export const userManager = new UserManager({
   response_type: 'code',
   scope: 'openid profile email',
   userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-  automaticSilentRenew: false,
+  // Access tokens are short-lived (minutes). Renew them in the background with the
+  // refresh token before they expire, so people are not signed out mid-task; the
+  // sign-in service still ends the session after its idle and maximum times.
+  automaticSilentRenew: true,
   monitorSession: false,
 })

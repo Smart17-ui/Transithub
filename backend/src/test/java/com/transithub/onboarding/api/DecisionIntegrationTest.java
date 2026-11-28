@@ -21,7 +21,10 @@ import com.transithub.identity.Role;
 import com.transithub.identity.TestUsers;
 import com.transithub.shared.tenancy.PlatformScopeExtension;
 
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,9 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Review, decision and company establishment (Release 1 spec 5.6–5.7;
- * AC-R1-DEC-01…05, AC-R1-EST-01…03). Joseph captured, Chanda verified,
- * Mwila reviews, Ruth decides.
+ * One checker verifies and decides (decision log, 27 Nov 2026; Release 1
+ * spec 5.6–5.7, AC-R1-DEC-03…05, AC-R1-EST-01…03). Joseph captured Kafue
+ * Coaches; Chanda takes it from the queue, checks it and decides.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -49,52 +52,48 @@ class DecisionIntegrationTest {
     private RegistrationFixtures fixtures;
     private TestUsers.TestUser joseph;
     private TestUsers.TestUser chanda;
-    private TestUsers.TestUser mwila;
-    private TestUsers.TestUser ruth;
     private UUID id;
 
     @BeforeEach
-    void recommendedRegistration() throws Exception {
+    void submittedRegistration() throws Exception {
         users = new TestUsers(jdbc);
         fixtures = new RegistrationFixtures(mockMvc);
         joseph = users.platform(Role.REGISTRATION_OFFICER);
         chanda = users.platform(Role.VERIFICATION_OFFICER);
-        mwila = users.platform(Role.RECOMMENDATION_REVIEWER);
-        ruth = users.platform(Role.REGISTRATION_APPROVER);
-        TestUsers.TestUser supervisor = users.platform(Role.REGISTRATION_SUPERVISOR);
-
         id = fixtures.submitted(joseph);
-        post(supervisor, "/verification/assignment", """
-                {"version": %d, "verifierId": "%s"}
-                """.formatted(fixtures.version(supervisor, id), chanda.id())).andExpect(status().isOk());
-        String evidenceId = JsonPath.read(fixtures.json(chanda, "/api/v1/registrations/" + id), "$.evidence[0].id");
-        post(chanda, "/verification/evidence/" + evidenceId + "/assessment", """
-                {"version": %d, "outcome": "ACCEPTED", "findings": "Valid"}
-                """.formatted(fixtures.version(chanda, id))).andExpect(status().isOk());
-        post(chanda, "/verification/recommendation", """
-                {"version": %d, "recommendation": "APPROVE", "reasons": "All documents valid"}
-                """.formatted(fixtures.version(chanda, id))).andExpect(status().isOk());
     }
 
     @Test
-    void AC_R1_DEC_01_03_and_EST_01_endorsedRecommendationIsApprovedAndTheCompanyIsEstablished() throws Exception {
-        review(mwila, "ENDORSE", null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RECOMMENDED"));
+    void aCheckerTakesASubmittedRegistrationFromTheQueue() throws Exception {
+        mockMvc.perform(get("/api/v1/registrations/" + id).with(chanda.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedActions", hasItem("takeVerification")));
 
-        String body = approve(ruth)
+        post(chanda, "/verification/take", """
+                {"version": %d}
+                """.formatted(fixtures.version(chanda, id)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UNDER_VERIFICATION"))
+                .andExpect(jsonPath("$.allowedActions", hasItems("verify", "approve", "reject")));
+    }
+
+    @Test
+    void AC_R1_DEC_03_and_EST_01_theCheckerApprovesAndTheCompanyIsEstablished() throws Exception {
+        fixtures.checkEverything(chanda, id);
+
+        String body = approve(chanda)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.registration.status").value("APPROVED"))
                 .andExpect(jsonPath("$.company.companyCode").value(matchesPattern("TH-ZM-\\d{6}")))
+                .andExpect(jsonPath("$.company.operatingLicenceNumber").value(matchesPattern("RSL-.+")))
                 .andExpect(jsonPath("$.company.operationalStatus").value("PENDING_ACTIVATION"))
                 .andExpect(jsonPath("$.company.registrationId").value(id.toString()))
                 .andReturn().getResponse().getContentAsString();
         UUID companyId = UUID.fromString(JsonPath.read(body, "$.company.id"));
 
-        mockMvc.perform(get("/api/v1/registrations/" + id + "/decision").with(ruth.token()))
-                .andExpect(jsonPath("$.reviews[0].outcome").value("ENDORSE"))
-                .andExpect(jsonPath("$.reviews[0].reviewedBy").value(mwila.id().toString()))
+        mockMvc.perform(get("/api/v1/registrations/" + id + "/decision").with(chanda.token()))
                 .andExpect(jsonPath("$.decision.outcome").value("APPROVED"))
-                .andExpect(jsonPath("$.decision.decidedBy").value(ruth.id().toString()))
+                .andExpect(jsonPath("$.decision.decidedBy").value(chanda.id().toString()))
                 .andExpect(jsonPath("$.decision.companyId").value(companyId.toString()));
 
         assertEquals(1, count("SELECT COUNT(*) FROM audit_event WHERE entity_id = :id AND action = 'company.established'", companyId));
@@ -102,43 +101,62 @@ class DecisionIntegrationTest {
     }
 
     @Test
-    void AC_R1_DEC_01_noDecisionBeforeAnIndependentReviewerEndorses() throws Exception {
-        approve(ruth)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("recommendation-not-endorsed"));
+    void approvalWaitsForMatchingPacraAndRtsaChecks() throws Exception {
+        take(chanda);
+        assessAll(chanda);
+
+        approve(chanda)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("verification-incomplete"))
+                .andExpect(jsonPath("$.missing", hasItems("registryCheck.PACRA", "registryCheck.RTSA")));
+
+        fixtures.registryCheck(chanda, id, "PACRA", "PACRA-number", "MATCH");
+        fixtures.registryCheck(chanda, id, "RTSA", "RSL-number", "NOT_FOUND");
+        approve(chanda)
+                .andExpect(jsonPath("$.missing", hasItem("registryCheck.RTSA")))
+                .andExpect(jsonPath("$.missing", not(hasItem("registryCheck.PACRA"))));
+
+        // A later check of the same register supersedes the earlier one.
+        fixtures.registryCheck(chanda, id, "RTSA", "RSL-number", "MATCH");
+        approve(chanda).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/registrations/" + id + "/verification").with(chanda.token()))
+                .andExpect(jsonPath("$.registryChecks.length()").value(3))
+                .andExpect(jsonPath("$.registryChecks[0].checkedBy").value(chanda.id().toString()));
     }
 
     @Test
-    void AC_R1_DEC_02_aChallengeSendsItBackToTheVerifierWithComments() throws Exception {
-        review(mwila, "CHALLENGE", "Please confirm the operating licence covers intercity routes")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("UNDER_VERIFICATION"));
+    void aRegisterResultOtherThanAMatchNeedsAnExplanation() throws Exception {
+        take(chanda);
+        post(chanda, "/verification/registry-checks", """
+                {"version": %d, "source": "PACRA", "reference": "PACRA-1", "result": "NOT_FOUND"}
+                """.formatted(fixtures.version(chanda, id)))
+                .andExpect(status().isBadRequest());
+    }
 
-        assertEquals(1, count("SELECT COUNT(*) FROM verification_recommendation WHERE registration_id = :id AND superseded_at IS NOT NULL", id));
-        assertEquals(1, count("SELECT COUNT(*) FROM notification_outbox WHERE template = 'registration.recommendation-challenged' AND recipient_user_id = CAST(:id AS text)", chanda.id()));
-
-        // Chanda recommends again; it needs a fresh review before any decision.
-        post(chanda, "/verification/recommendation", """
-                {"version": %d, "recommendation": "APPROVE", "reasons": "Licence confirmed with RTSA"}
+    @Test
+    void aDocumentThatWasNotAcceptedBlocksApproval() throws Exception {
+        fixtures.checkEverything(chanda, id);
+        String evidenceId = JsonPath.read(fixtures.json(chanda, "/api/v1/registrations/" + id), "$.evidence[0].id");
+        post(chanda, "/verification/evidence/" + evidenceId + "/assessment", """
+                {"version": %d, "outcome": "INVALID", "findings": "Certificate number does not exist"}
                 """.formatted(fixtures.version(chanda, id))).andExpect(status().isOk());
-        approve(ruth).andExpect(jsonPath("$.code").value("recommendation-not-endorsed"));
-    }
 
-    @Test
-    void aChallengeNeedsComments() throws Exception {
-        review(mwila, "CHALLENGE", null).andExpect(status().isBadRequest());
+        approve(chanda)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.missing", hasItem("evidence[" + evidenceId + "].notAccepted")));
     }
 
     @Test
     void AC_R1_DEC_04_rejectionRecordsReasonsAndTheAppealDeadline() throws Exception {
-        review(mwila, "ENDORSE", null);
+        take(chanda);
 
-        String body = reject(ruth, "The operating licence is forged")
+        String body = reject(chanda, "The operating licence is not on the RTSA register")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andReturn().getResponse().getContentAsString();
 
-        String deadline = JsonPath.read(fixtures.json(ruth, "/api/v1/registrations/" + id + "/decision"),
+        String deadline = JsonPath.read(fixtures.json(chanda, "/api/v1/registrations/" + id + "/decision"),
                 "$.decision.appealDeadline");
         Duration window = Duration.between(Instant.now(), Instant.parse(deadline));
         assertTrue(window.toDays() >= 29 && window.toDays() <= 30, "appeal window is 30 days, was " + window);
@@ -147,44 +165,34 @@ class DecisionIntegrationTest {
     }
 
     @Test
-    void theVerifierCannotReviewTheirOwnRecommendation() throws Exception {
-        users.addRole(chanda, Role.RECOMMENDATION_REVIEWER, null);
+    void onlyTheCheckerWhoTookItDecides() throws Exception {
+        fixtures.checkEverything(chanda, id);
+        TestUsers.TestUser anotherChecker = users.platform(Role.VERIFICATION_OFFICER);
 
-        review(chanda, "ENDORSE", null)
+        // Not theirs to see once taken: "not found", as for any record outside your work.
+        approve(anotherChecker).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theCapturerCannotTakeOrDecide() throws Exception {
+        users.addRole(joseph, Role.VERIFICATION_OFFICER, null);
+
+        mockMvc.perform(get("/api/v1/registrations/" + id).with(joseph.token()))
+                .andExpect(jsonPath("$.allowedActions", not(hasItem("takeVerification"))));
+        take(joseph)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("separation-of-duties"));
     }
 
     @Test
-    void theReviewerCannotAlsoDecide() throws Exception {
-        review(mwila, "ENDORSE", null);
-        users.addRole(mwila, Role.REGISTRATION_APPROVER, null);
+    void AC_R1_DEC_05_twoDecisionsAtTheSameMomentOnlyOneCounts() throws Exception {
+        fixtures.checkEverything(chanda, id);
+        long version = fixtures.version(chanda, id);
 
-        approve(mwila)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("separation-of-duties"));
-    }
-
-    @Test
-    void theCapturerCannotDecide() throws Exception {
-        review(mwila, "ENDORSE", null);
-        users.addRole(joseph, Role.REGISTRATION_APPROVER, null);
-
-        reject(joseph, "Changed my mind")
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("separation-of-duties"));
-    }
-
-    @Test
-    void AC_R1_DEC_05_twoApproversAtTheSameMomentOnlyOneDecisionCounts() throws Exception {
-        review(mwila, "ENDORSE", null);
-        TestUsers.TestUser secondApprover = users.platform(Role.REGISTRATION_APPROVER);
-        long version = fixtures.version(ruth, id);
-
-        post(ruth, "/decision/approval", """
+        post(chanda, "/decision/approval", """
                 {"version": %d, "rationale": "Approved"}
                 """.formatted(version)).andExpect(status().isOk());
-        post(secondApprover, "/decision/rejection", """
+        post(chanda, "/decision/rejection", """
                 {"version": %d, "reasons": "Rejected a second later"}
                 """.formatted(version))
                 .andExpect(status().isConflict())
@@ -193,41 +201,49 @@ class DecisionIntegrationTest {
 
     @Test
     void AC_R1_EST_02_aRegistrationEstablishesAtMostOneCompany() throws Exception {
-        review(mwila, "ENDORSE", null);
-        approve(ruth).andExpect(status().isOk());
+        fixtures.checkEverything(chanda, id);
+        approve(chanda).andExpect(status().isOk());
 
-        approve(ruth).andExpect(status().isConflict());
+        approve(chanda).andExpect(status().isConflict());
         assertEquals(1, count("SELECT COUNT(*) FROM companies WHERE registration_id = :id", id));
     }
 
     @Test
-    void reviewersAndApproversSeeRegistrationsAtTheDecisionStage() throws Exception {
-        mockMvc.perform(get("/api/v1/registrations/" + id).with(ruth.token())).andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/registrations/" + id).with(mwila.token())).andExpect(status().isOk());
+    void checkersSeeSubmittedRegistrationsButNotOtherPeoplesDrafts() throws Exception {
+        mockMvc.perform(get("/api/v1/registrations/" + id).with(chanda.token())).andExpect(status().isOk());
 
         UUID draft = fixtures.completeDraft(joseph, "PACRA-" + UUID.randomUUID().toString().substring(0, 12),
                 "Still A Draft " + UUID.randomUUID(), "Kafue");
-        mockMvc.perform(get("/api/v1/registrations/" + draft).with(ruth.token())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/registrations/" + draft).with(chanda.token())).andExpect(status().isNotFound());
     }
 
     // --- helpers -----------------------------------------------------------------
 
-    private ResultActions review(TestUsers.TestUser reviewer, String outcome, String comments) throws Exception {
-        return post(reviewer, "/recommendation-review", """
-                {"version": %d, "outcome": "%s", "comments": %s}
-                """.formatted(fixtures.version(mwila, id), outcome, comments == null ? "null" : "\"" + comments + "\""));
+    private ResultActions take(TestUsers.TestUser checker) throws Exception {
+        return post(checker, "/verification/take", """
+                {"version": %d}
+                """.formatted(fixtures.version(chanda, id)));
     }
 
-    private ResultActions approve(TestUsers.TestUser approver) throws Exception {
-        return post(approver, "/decision/approval", """
+    private void assessAll(TestUsers.TestUser checker) throws Exception {
+        java.util.List<String> evidenceIds = JsonPath.read(fixtures.json(checker, "/api/v1/registrations/" + id), "$.evidence[*].id");
+        for (String evidenceId : evidenceIds) {
+            post(checker, "/verification/evidence/" + evidenceId + "/assessment", """
+                    {"version": %d, "outcome": "ACCEPTED", "findings": "Valid"}
+                    """.formatted(fixtures.version(checker, id))).andExpect(status().isOk());
+        }
+    }
+
+    private ResultActions approve(TestUsers.TestUser checker) throws Exception {
+        return post(checker, "/decision/approval", """
                 {"version": %d, "rationale": "All requirements met"}
-                """.formatted(fixtures.version(ruth, id)));
+                """.formatted(fixtures.version(chanda, id)));
     }
 
-    private ResultActions reject(TestUsers.TestUser approver, String reasons) throws Exception {
-        return post(approver, "/decision/rejection", """
+    private ResultActions reject(TestUsers.TestUser checker, String reasons) throws Exception {
+        return post(checker, "/decision/rejection", """
                 {"version": %d, "reasons": "%s"}
-                """.formatted(fixtures.version(ruth, id), reasons));
+                """.formatted(fixtures.version(chanda, id), reasons));
     }
 
     private ResultActions post(TestUsers.TestUser user, String path, String body) throws Exception {

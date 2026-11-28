@@ -553,5 +553,14 @@ Decisions are recorded as they are made, most recent last. Each one updates the 
 | 27 Nov 2026 | Hosting (revised) | **Infratel Zambia**, free use offered; personal data stays in Zambia (Data Protection Act 2021). Replaces AWS Cape Town | ADR-0017 supersedes ADR-0016 and ADR-0013's location |
 | 27 Nov 2026 | Login service (revised) | **Keycloak, self-hosted on Infratel**. Replaces Cognito; MFA and session decisions unchanged | ADR-0017 |
 | 27 Nov 2026 | Legal confirmation | **Product owner to confirm with ODPC / lawyer** before go-live | ADR-0017; hosting and data-protection checklist |
+| 27 Nov 2026 | Site sign-in | **One "Sign in" for TransitHub staff and transport-company users**; roles decide what each sees. Passengers sign in separately from the booking pages. No staff link on public pages | BP-03 decision A, J |
+| 27 Nov 2026 | Guest booking access | **Booking reference + phone number, confirmed by SMS code** | BP-03 decision J |
+| 27 Nov 2026 | Passenger accounts | **Phone number + SMS one-time code**, no password | BP-03 decision J |
+| 27 Nov 2026 | Guest bookings on sign-up | **Linked automatically after the phone number is verified by SMS** | BP-03 decision J |
+| 27 Nov 2026 | Company verification (revised) | **Verification stays, made lighter: one Compliance Officer takes the application, verifies it and approves or declines.** Recommendation, review and separate approval are retired. The only separation kept: whoever prepared an application cannot decide on it | Release 1 spec, change notice; supersedes the four-person chain |
+| 27 Nov 2026 | What a company provides | **PACRA registration number and RTSA Road Service Licence number, plus the Certificate of Incorporation and Road Service Licence documents.** Tax clearance and other documents optional | Release 1 spec, change notice |
+| 27 Nov 2026 | Registry verification | **The officer records each check against the official source** (PACRA, RTSA; ZRA optional): number, result, note, who and when. Approval needs PACRA and RTSA to show a match and every document accepted | Release 1 spec, change notice |
+| 27 Nov 2026 | Payouts to operators | **Ticket money is paid only to a mobile-money or bank account in the company's or a director's name**, verified before marketplace sales | BP-03 decision K; BP-09 |
+| 27 Nov 2026 | Self-service company sign-up | **Planned next**: companies apply online themselves; needs applicant accounts (design to follow) | Backlog |
 
 **All P1 recommendations are now decided.** P2/P3 items are decided when the relevant work starts.

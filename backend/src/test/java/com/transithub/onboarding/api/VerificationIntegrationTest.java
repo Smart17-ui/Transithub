@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Verification (Release 1 spec 5.5, AC-R1-VER-01…07). Joseph captured
+ * Verification (Release 1 spec 5.5, AC-R1-VER-01…06). Joseph captured
  * Kafue Coaches; the supervisor assigns Chanda to verify it.
  */
 @SpringBootTest
@@ -92,7 +92,7 @@ class VerificationIntegrationTest {
 
     @Test
     void onlyActiveVerificationOfficersCanBeAssigned() throws Exception {
-        assign(users.platform(Role.REGISTRATION_APPROVER))
+        assign(users.platform(Role.REGISTRATION_OFFICER))
                 .andExpect(status().isBadRequest());
     }
 
@@ -148,7 +148,7 @@ class VerificationIntegrationTest {
                         .param("evidenceType", "TAX_CLEARANCE")
                         .with(joseph.token()))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.evidence", hasSize(2)))
+                .andExpect(jsonPath("$.evidence", hasSize(3)))
                 // supporting evidence does not invalidate Mr Banda's signature
                 .andExpect(jsonPath("$.representatives[0].acknowledgement.outcome").value("ACKNOWLEDGED"));
 
@@ -193,26 +193,20 @@ class VerificationIntegrationTest {
     }
 
     @Test
-    void AC_R1_VER_07_aRecommendationNeedsEveryDocumentAssessedFirst() throws Exception {
+    void approvalNeedsEveryDocumentAssessedFirst() throws Exception {
         assign(chanda);
 
-        recommend("APPROVE", "All checks passed")
+        approve()
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("verification-incomplete"))
                 .andExpect(jsonPath("$.missing[0]", startsWith("evidence[")));
 
-        assess(chanda, evidenceId(), "ACCEPTED", "Valid");
-        recommend("APPROVE", "All checks passed")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RECOMMENDED"));
-
         mockMvc.perform(get("/api/v1/registrations/" + id + "/verification").with(chanda.token()))
-                .andExpect(jsonPath("$.recommendations[0].recommendation").value("APPROVE"))
-                .andExpect(jsonPath("$.recommendations[0].reasons").value("All checks passed"));
+                .andExpect(jsonPath("$.outstandingForApproval", hasItem("registryCheck.PACRA")));
     }
 
     @Test
-    void possibleDuplicatesMustBeReviewedBeforeRecommending() throws Exception {
+    void possibleDuplicatesMustBeReviewedBeforeApproving() throws Exception {
         String regNo = "PACRA-" + UUID.randomUUID().toString().substring(0, 12);
         UUID first = fixtures.completeDraft(joseph, regNo, "Original Ltd " + regNo, "Kafue");
         mockMvc.perform(post("/api/v1/registrations/" + first + "/submission").with(joseph.token())
@@ -225,9 +219,7 @@ class VerificationIntegrationTest {
                 .andReturn().getResponse().getContentAsString(), "$.possibleDuplicates[0].id");
 
         assign(chanda);
-        assess(chanda, evidenceId(), "ACCEPTED", "Valid");
-        recommend("APPROVE", "Fine")
-                .andExpect(jsonPath("$.missing", hasItem("duplicate[" + flagId + "].review")));
+        approve().andExpect(jsonPath("$.missing", hasItem("duplicate[" + flagId + "].review")));
 
         mockMvc.perform(post("/api/v1/registrations/" + id + "/duplicate-flags/" + flagId + "/review")
                         .with(chanda.token()).contentType(MediaType.APPLICATION_JSON)
@@ -236,7 +228,7 @@ class VerificationIntegrationTest {
                                  "note": "Different company; the number was mistyped on the first registration"}
                                 """.formatted(fixtures.version(chanda, id))))
                 .andExpect(status().isOk());
-        recommend("APPROVE", "Fine").andExpect(status().isOk());
+        approve().andExpect(jsonPath("$.missing", org.hamcrest.Matchers.not(hasItem("duplicate[" + flagId + "].review"))));
     }
 
     // --- helpers -----------------------------------------------------------------
@@ -266,12 +258,12 @@ class VerificationIntegrationTest {
                         """.formatted(fixtures.version(chanda, id), description, dueDate)));
     }
 
-    private ResultActions recommend(String recommendation, String reasons) throws Exception {
-        return mockMvc.perform(post("/api/v1/registrations/" + id + "/verification/recommendation").with(chanda.token())
+    private ResultActions approve() throws Exception {
+        return mockMvc.perform(post("/api/v1/registrations/" + id + "/decision/approval").with(chanda.token())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"version": %d, "recommendation": "%s", "reasons": "%s"}
-                        """.formatted(fixtures.version(chanda, id), recommendation, reasons)));
+                        {"version": %d, "rationale": "All checks passed"}
+                        """.formatted(fixtures.version(chanda, id))));
     }
 
     private String evidenceId() throws Exception {

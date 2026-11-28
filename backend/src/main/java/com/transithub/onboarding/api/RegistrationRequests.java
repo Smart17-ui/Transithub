@@ -36,6 +36,7 @@ final class RegistrationRequests {
             @Size(max = 200) @Nullable String legalName,
             @Size(max = 200) @Nullable String tradingName,
             @Size(max = 100) @Nullable String registrationNumber,
+            @Size(max = 100) @Nullable String operatingLicenceNumber,
             @Size(max = 100) @Nullable String businessType,
             @Size(max = 100) @Nullable String province,
             @Size(max = 100) @Nullable String district,
@@ -45,7 +46,7 @@ final class RegistrationRequests {
             @Pattern(regexp = PHONE) @Nullable String contactPhone) {
 
         CompanyDetails toDomain() {
-            return new CompanyDetails(legalName, tradingName, registrationNumber, businessType, province,
+            return new CompanyDetails(legalName, tradingName, registrationNumber, operatingLicenceNumber, businessType, province,
                     district, physicalAddress, postalAddress, contactEmail, contactPhone);
         }
     }
