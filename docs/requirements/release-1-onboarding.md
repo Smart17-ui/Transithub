@@ -231,3 +231,16 @@ Still to build for self-service: answering information requests in the account (
 Still open for self-service: SS-6 (authenticator required once Company Administrator; needs the Keycloak admin integration of #4), SS-4 signing links (needs #13).
 
 **Build progress (28 November 2026, SS-8).** The applicant answers information requests in their account: "My application" shows what was asked and the reply-by date (never who asked), lets them add documents to the request and send an answer; checking then resumes and the assigned Compliance Officer is notified through the outbox. V17 lets the applicant scope read and answer requests on their own application only, and enqueue only that one notification, only to their application's assigned officer. Test: `theApplicantAnswersAnInformationRequestInTheirAccount`.
+
+## 10. Field devices (product owner, 28 November 2026)
+
+**FD-1.** Offline field capture runs on **Android phones and tablets** (Chrome, installable web app), including **officers' personal phones**. Tablets remain best for on-screen signatures; the app is built for both screen sizes.
+
+Because TransitHub does not control a personal phone, the app itself must protect the data:
+- offline drafts, document photos and signatures are stored **encrypted inside the app**, never in the phone's gallery, files or cloud backup;
+- an **app PIN** is required before offline drafts are shown;
+- a draft is **deleted from the phone once it has synced**;
+- when an officer's access is removed or their account disabled, the app **deletes all local TransitHub data** at its next connection;
+- drafts not synced within a set number of days are flagged to the supervisor.
+
+**Condition:** to be confirmed with the lawyer or ODPC (checklist #3) before go-live. The device trial (backlog #8) may use any Android phone with Chrome.

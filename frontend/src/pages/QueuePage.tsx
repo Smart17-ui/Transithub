@@ -190,7 +190,7 @@ function CompanyHome({ token, name, companyId }: { token: string; name: string |
         <Text c="dimmed" mt="lg" maw={680}>
           You are the Company Administrator. The tools to run your company appear here as they launch.
         </Text>
-        <ul className="tick-list applicant-needs">
+        <ul className="soon-list">
           <li><Badge variant="outline" color="orange" mr={6}>Coming soon</Badge>Add your office staff and give each person their role</li>
           <li><Badge variant="outline" color="orange" mr={6}>Coming soon</Badge>Your buses, routes and trips</li>
           <li><Badge variant="outline" color="orange" mr={6}>Coming soon</Badge>Sell tickets online and at your counters</li>

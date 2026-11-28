@@ -69,3 +69,6 @@
 | Audit | Append-only, in Zambia (ADR-0008). Part B #8 may need a documented policy on how correction requests are handled |
 | Source code and CI | GitHub holds code and generated test data only, never real personal data |
 | SMS, email, file storage, backups | **Open:** choose in-country options once Parts A and B are answered |
+
+### Added 28 November 2026 — personal phones for field capture (decision FD-1)
+- May Registration Officers capture applicants' personal data (names, NRC numbers, signatures, PACRA/RTSA documents) offline on their **own phones**, given the safeguards in the Release 1 spec §10 (encrypted in-app storage, app PIN, deletion after sync, remote wipe when access is removed)? Is a written device-use policy or officer undertaking required?

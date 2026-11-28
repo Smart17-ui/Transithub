@@ -631,3 +631,8 @@ html:root[data-mantine-color-scheme='dark'] .cta-band { border: 1px solid #2E406
 .conflict-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px; }
 .conflict-columns > div { padding: 14px 16px; border-radius: 12px; background: var(--page); }
 @media (max-width: 800px) { .conflict-columns { grid-template-columns: 1fr; } }
+
+/* Features not available yet: neutral dots, never ticks (a tick reads as done) */
+.soon-list { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.soon-list li { display: flex; align-items: center; gap: 4px; font-size: 15px; color: var(--ink); }
+.soon-list li::before { content: ''; flex: 0 0 6px; height: 6px; margin-right: 10px; border-radius: 50%; background: var(--muted); }
