@@ -49,7 +49,7 @@ A Registration Officer registers a transport company **offline on a tablet**. Th
 | Establish company and generate code | UC-01.01-12 | — |
 | Invite first Company Administrator; first sign-in | UC-01.01-16, UC-X-IAM-01 | Full company user management (Release 2) |
 | Withdraw before a decision | UC-01.01-15 | Re-registration linking (later) |
-| Registration status and progress | UC-01.01-17 (staff view) | Applicant self-service portal (later) |
+| Registration status and progress | UC-01.01-17 (staff view) | Applicant self-service portal: **moved into Release 1, see §9** |
 | Platform staff accounts and scoped roles | UC-X-IAM-01 to -03 | Delegation (UC-X-IAM-04) |
 | Audit trail view | UC-X-AUD-01 (basic) | — |
 | Notifications: email and SMS for invitation, information request, decision | UC-X-GOV-04 (basic) | Delivery tracking, acknowledgement, failure escalation |
@@ -194,3 +194,24 @@ Test names cite the criterion ID, for example `AC_R1_CAP_03_missingMandatoryFiel
 3. Every representative marked "required" must acknowledge.
 4. Activation needs only the first administrator's sign-in, with no subscription condition in Release 1.
 5. Proposed limits: 10 MB per evidence file, 7-day invitation expiry, 30-day appeal window (all settings).
+
+---
+
+## 9. Self-service company sign-up (pulled into Release 1, product owner, 27 November 2026)
+
+The applicant portal moves from "later" into Release 1. It replaces the interim `/register` request form. Officer field capture stays for companies that need help.
+
+| # | Situation | Decision |
+|---|---|---|
+| SS-1 | A bus company owner clicks "Register your company" | They create an **applicant account** and fill in the application themselves; they can save and return later. |
+| SS-2 | The application is approved | The **same login** receives the Company Administrator role. There is no second sign-up; the invitation step is replaced for self-service applicants. |
+| SS-3 | Two people from the same company each start an application | **Both may apply.** The existing duplicate check flags it; the Compliance Officer keeps one and declines the other with a reason. Nobody is told that another application exists. |
+| SS-4 | The company has several directors who must sign | Each director receives a link (SMS or email) to review and sign **on their own phone**. Until notifications (#13) exist, they sign on the applicant's screen. |
+| SS-5 | The applicant creates an account | **Email and password**; the email is confirmed by a link before the application can be submitted. The phone number is collected and verified by SMS once SMS sending (#13) exists. |
+| SS-6 | Second security step (authenticator code) | **Not while applying.** Required from the moment the account becomes Company Administrator. |
+| SS-7 | The applicant signs in while the application is being checked | A **progress timeline** (Submitted, Being checked, Decision), any requests from TransitHub, and the decision with reasons. Never the checker's identity or internal notes. |
+| SS-8 | The Compliance Officer asks for a clearer document | The applicant sees the request **in their account** (and by email once sending exists), uploads the document and replies there; it is recorded on the application. |
+| SS-9 | The applicant spots a mistake after submitting | The submitted version stays locked. **Before checking starts** they can pull it back to draft, correct it and submit again (a new submitted version). Once checking has started, they send a message and the Compliance Officer requests the correction. |
+| SS-10 | The applicant decides not to go ahead | They can **withdraw it themselves** at any time before the decision, giving a short reason; audited like staff withdrawals. |
+| SS-11 | A colleague wants to help before approval | **One applicant account per application.** Colleagues are added by the Company Administrator after approval. |
+| SS-12 | The application is declined | The applicant **keeps the account**, sees the reasons and appeal deadline, and may appeal (Release 1.1) or start a new application. |
