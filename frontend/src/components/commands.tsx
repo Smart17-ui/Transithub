@@ -234,15 +234,46 @@ export function ApproveDialog({ token, registration, opened, onClose, onApproved
   const command = useCommand(registration.id)
   const [rationale, setRationale] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  // What still blocks approval, as the server sees it; shown as a checklist before anyone tries.
+  const summary = useQuery({ queryKey: ['verification', registration.id], queryFn: () => api.verification(token, registration.id), enabled: opened })
+  const v = summary.data
+  const accepted = new Set(v?.assessments.filter((a) => a.outcome === 'ACCEPTED').map((a) => a.evidenceId) ?? [])
+  const docsDone = registration.evidence.filter((e) => accepted.has(e.id)).length
+  const matched = (source: string) => v?.registryChecks.some((c) => c.source === source && c.result === 'MATCH') ?? false
+  const checks = [
+    { done: docsDone === registration.evidence.length && registration.evidence.length > 0,
+      label: `Every document reviewed and accepted (${docsDone} of ${registration.evidence.length})`,
+      hint: 'Use Review next to each document under Supporting documents.' },
+    { done: matched('PACRA'), label: 'PACRA company registry verified as a match', hint: 'Use Verify next to Company registry.' },
+    { done: matched('RTSA'), label: 'RTSA Road Service Licence verified as a match', hint: 'Use Verify next to Road Service Licence.' },
+    { done: (v?.unreviewedDuplicateFlags.length ?? 0) === 0, label: 'Possible duplicates reviewed', hint: 'Review each one under Potential duplicates.' },
+  ]
+  const ready = !!v && v.outstandingForApproval.length === 0
+
   return (
     <CommandDialog opened={opened} onClose={onClose} title="Approve application"
-      intro={<Alert variant="light" color="teal">Approval establishes <b>{registration.details.legalName}</b> as a company with the next TH-ZM code, and invites its primary contact to sign in. Approval is available once every document has been accepted and the PACRA and RTSA verifications are complete.</Alert>}
-      submitLabel="Approve" canSubmit={!!rationale.trim() && confirmed} busy={command.isPending} error={command.error}
+      intro={<Text size="sm" c="dimmed">Approval establishes <b>{registration.details.legalName}</b> as a company on TransitHub with its own TH-ZM company code.</Text>}
+      submitLabel="Approve" canSubmit={ready && !!rationale.trim() && confirmed} busy={command.isPending} error={command.error}
       onSubmit={() => command.mutate(() => api.approve(token, registration, rationale.trim()), {
         onSuccess: (result) => { if ('company' in result) onApproved(result.company as Company); onClose() },
       })}>
-      <Textarea label="Decision rationale" value={rationale} onChange={(e) => setRationale(e.currentTarget.value)} required maxLength={4000} autosize minRows={3} />
-      <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.currentTarget.checked)} label="I confirm that I have personally reviewed the documents and verified the PACRA and RTSA records." />
+      <Stack gap={8} className="approve-checklist">
+        <Text fw={600} size="sm">{ready ? 'All checks are complete.' : 'Before you can approve:'}</Text>
+        {summary.isPending ? <Text size="sm" c="dimmed">Checking…</Text> : checks.map((c) => (
+          <div key={c.label} className={`approve-check ${c.done ? 'is-done' : ''}`}>
+            <span className="approve-check-mark" aria-hidden>{c.done ? '✓' : '•'}</span>
+            <div>
+              <Text size="sm" fw={c.done ? 400 : 600}>{c.label}</Text>
+              {!c.done && <Text size="xs" c="dimmed">{c.hint}</Text>}
+            </div>
+          </div>
+        ))}
+      </Stack>
+      {ready && <>
+        <Textarea label="Reason for approving" placeholder="e.g. Registered and licensed; all documents valid" value={rationale}
+          onChange={(e) => setRationale(e.currentTarget.value)} required maxLength={4000} autosize minRows={3} />
+        <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.currentTarget.checked)} label="I confirm that I have personally reviewed the documents and verified the PACRA and RTSA records." />
+      </>}
     </CommandDialog>
   )
 }

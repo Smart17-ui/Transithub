@@ -44,7 +44,7 @@ public interface CompanyRegistrationRepository extends JpaRepository<CompanyRegi
      * actor captured or checks, plus, for checkers, submitted registrations
      * waiting to be taken.
      *
-     * @param search lower-case {@code LIKE} pattern over reference and legal name; {@code "%"} matches all
+     * @param search lower-case {@code LIKE} pattern over reference, legal and trading name, PACRA and RTSA numbers; {@code "%"} matches all
      */
     @Query(value = """
             SELECT new com.transithub.onboarding.repository.CompanyRegistrationRepository$ListItem(
@@ -53,7 +53,10 @@ public interface CompanyRegistrationRepository extends JpaRepository<CompanyRegi
               FROM CompanyRegistration r
              WHERE r.status IN :statuses
                AND (lower(r.reference) LIKE :search ESCAPE '\\'
-                    OR lower(coalesce(r.details.legalName, '')) LIKE :search ESCAPE '\\')
+                    OR lower(coalesce(r.details.legalName, '')) LIKE :search ESCAPE '\\'
+                    OR lower(coalesce(r.details.tradingName, '')) LIKE :search ESCAPE '\\'
+                    OR lower(coalesce(r.details.registrationNumber, '')) LIKE :search ESCAPE '\\'
+                    OR lower(coalesce(r.details.operatingLicenceNumber, '')) LIKE :search ESCAPE '\\')
                AND (:viewAll = true OR r.capturedBy = :actor OR r.assignedVerifier = :actor
                     OR (:checker = true AND r.status = :waitingStatus))
              ORDER BY r.updatedAt DESC, r.id
@@ -63,7 +66,10 @@ public interface CompanyRegistrationRepository extends JpaRepository<CompanyRegi
               FROM CompanyRegistration r
              WHERE r.status IN :statuses
                AND (lower(r.reference) LIKE :search ESCAPE '\\'
-                    OR lower(coalesce(r.details.legalName, '')) LIKE :search ESCAPE '\\')
+                    OR lower(coalesce(r.details.legalName, '')) LIKE :search ESCAPE '\\'
+                    OR lower(coalesce(r.details.tradingName, '')) LIKE :search ESCAPE '\\'
+                    OR lower(coalesce(r.details.registrationNumber, '')) LIKE :search ESCAPE '\\'
+                    OR lower(coalesce(r.details.operatingLicenceNumber, '')) LIKE :search ESCAPE '\\')
                AND (:viewAll = true OR r.capturedBy = :actor OR r.assignedVerifier = :actor
                     OR (:checker = true AND r.status = :waitingStatus))
             """)

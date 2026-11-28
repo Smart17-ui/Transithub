@@ -18,6 +18,7 @@ import { NewRegistrationPage } from './pages/NewRegistrationPage'
 import { QueuePage } from './pages/QueuePage'
 import { RegistrationPage } from './pages/RegistrationPage'
 import { ApplicationPage } from './pages/ApplicationPage'
+import { RecordsPage } from './pages/RecordsPage'
 import { SignInPage } from './pages/SignInPage'
 
 function App() {
@@ -27,7 +28,11 @@ function App() {
 
   useEffect(() => {
     if (window.location.pathname === '/auth/callback') return
-    userManager.getUser().then((current) => {
+    userManager.getUser().then(async (current) => {
+      // An expired access token with a valid refresh token: renew quietly instead of signing out.
+      if (current?.expired && current.refresh_token) {
+        current = await userManager.signinSilent().catch(() => null)
+      }
       setUser(current && !current.expired ? current : null)
       setAuthReady(true)
     }).catch(() => setAuthReady(true))
@@ -110,6 +115,7 @@ function App() {
             <Route path="/registrations/new" element={signedIn(user && <NewRegistrationPage token={user.access_token} />)} />
             <Route path="/enquiries" element={signedIn(user && <EnquiriesPage token={user.access_token} />)} />
             <Route path="/registrations/:id" element={signedIn(user && <RegistrationPage token={user.access_token} />)} />
+            <Route path="/records" element={signedIn(user && <RecordsPage token={user.access_token} />)} />
             <Route path="/application/:id" element={signedIn(user && <ApplicationPage token={user.access_token} />)} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
@@ -143,6 +149,7 @@ function PageTitle({ signedIn }: { signedIn: boolean }) {
     }
     const staffTitle = pathname === '/' ? 'Work queue'
       : pathname === '/enquiries' ? 'Enquiries'
+      : pathname === '/records' ? 'Company records'
       : pathname === '/registrations/new' ? 'New registration'
       : pathname.startsWith('/registrations/') ? 'Registration'
       : pathname.startsWith('/application/') ? 'My application'

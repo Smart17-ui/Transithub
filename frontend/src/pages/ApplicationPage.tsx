@@ -5,9 +5,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { APPLICATIONS, api } from '../api/client'
-import type { Application, CompanyDetails, Registration, RegistrationStatus, Representative } from '../api/types'
+import type { Application, CompanyDetails, Evidence, Registration, RegistrationStatus, Representative } from '../api/types'
 import { ApiError, CenterMessage, evidenceTypeLabels, formatDate, formatDateTime } from '../components/common'
 import { DetailsFields, emptyDetails, normalizeDetails } from '../components/DetailsFields'
+import { DocumentPreview } from '../components/DocumentPreview'
 import { EvidenceUploadDialog, RemoveDialog, RepresentativeDialog, SignatureDialog, draftSteps } from '../components/capture'
 
 /**
@@ -20,6 +21,7 @@ type Dialog =
   | { kind: 'representative'; representative: Representative | null }
   | { kind: 'sign'; representative: Representative }
   | { kind: 'upload' }
+  | { kind: 'preview'; evidence: Evidence }
   | { kind: 'remove'; target: { kind: 'representative' | 'evidence'; id: string; label: string } }
   | { kind: 'submit' | 'takeBack' | 'withdraw' }
 
@@ -116,6 +118,7 @@ export function ApplicationPage({ token }: { token: string }) {
       {dialog?.kind === 'representative' && <RepresentativeDialog token={token} registration={application} representative={dialog.representative} opened onClose={close} />}
       {dialog?.kind === 'sign' && <SignatureDialog token={token} registration={application} representative={dialog.representative} opened onClose={close} />}
       {dialog?.kind === 'upload' && <EvidenceUploadDialog token={token} registration={application} opened onClose={close} />}
+      {dialog?.kind === 'preview' && <DocumentPreview token={token} registrationId={application.id} evidence={dialog.evidence} basePath={APPLICATIONS} onClose={close} />}
       {dialog?.kind === 'remove' && <RemoveDialog token={token} registration={application} target={dialog.target} opened onClose={close} />}
       {(dialog?.kind === 'submit' || dialog?.kind === 'takeBack' || dialog?.kind === 'withdraw') &&
         <StageDialog token={token} application={application} kind={dialog.kind} onClose={close} />}
@@ -262,14 +265,18 @@ function DocumentsPanel({ token, application, editable, onOpen }: {
           {application.evidence.map((e) => (
             <Group key={e.id} justify="space-between" className="list-row" wrap="nowrap">
               <div>
-                <Anchor component="button" size="sm" fw={600} onClick={() => {
-                  setError(null)
-                  api.downloadEvidence(token, application.id, e.id, e.fileName, APPLICATIONS).catch((err: Error) => setError(err))
-                }}>{e.fileName}</Anchor>
+                <Anchor component="button" size="sm" fw={600} onClick={() => onOpen({ kind: 'preview', evidence: e })}>{e.fileName}</Anchor>
                 <Text size="xs" c="dimmed">{evidenceTypeLabels[e.evidenceType]} · {(e.sizeBytes / 1024).toFixed(0)} KB · {formatDate(e.uploadedAt)}</Text>
               </div>
-              {editable && <Anchor component="button" size="xs" c="var(--th-danger-text)"
-                onClick={() => onOpen({ kind: 'remove', target: { kind: 'evidence', id: e.id, label: e.fileName } })}>Remove</Anchor>}
+              <Group gap="sm" wrap="nowrap">
+                <Button size="xs" variant="default" onClick={() => onOpen({ kind: 'preview', evidence: e })}>View</Button>
+                <Anchor component="button" size="xs" onClick={() => {
+                  setError(null)
+                  api.downloadEvidence(token, application.id, e.id, e.fileName, APPLICATIONS).catch((err: Error) => setError(err))
+                }}>Download</Anchor>
+                {editable && <Anchor component="button" size="xs" c="var(--th-danger-text)"
+                  onClick={() => onOpen({ kind: 'remove', target: { kind: 'evidence', id: e.id, label: e.fileName } })}>Remove</Anchor>}
+              </Group>
             </Group>
           ))}
         </Stack>

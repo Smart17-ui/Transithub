@@ -24,7 +24,7 @@ const PAGE_SIZE = 20
 export function QueuePage({ token }: { token: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { me, can } = useMe(token)
+  const { me, error: meError, can } = useMe(token)
   const page = Math.max(1, Number(params.get('page')) || 1)
   const [search, setSearch] = useState(params.get('search') ?? '')
   const [debouncedSearch] = useDebouncedValue(search, 300)
@@ -53,7 +53,14 @@ export function QueuePage({ token }: { token: string }) {
     placeholderData: keepPreviousData,
   })
 
-  if (me && !can('registration.view')) {
+  // Until we know who this is, show nothing role-specific: never the staff queue by default.
+  if (!me) {
+    return meError
+      ? <Paper className="panel center-message" radius="lg" p="xl"><ApiError error={meError} /></Paper>
+      : <Paper className="panel center-message" radius="lg" p="xl"><Text c="dimmed">Loading your account…</Text></Paper>
+  }
+
+  if (!can('registration.view')) {
     if (can('enquiry.manage')) return <Navigate to="/enquiries" replace />
     // No roles at all: someone who signed up to bring their bus company to TransitHub.
     if (me.emailNotConfirmed || me.roles.length === 0) return <ApplicantHome token={token} name={me.displayName} emailNotConfirmed={!!me.emailNotConfirmed} />
@@ -73,6 +80,7 @@ export function QueuePage({ token }: { token: string }) {
           </Text>
         </div>
         <Group gap="sm">
+        <Button variant="default" radius="xl" component={Link} to="/records">Company records</Button>
         {can('enquiry.manage') && (
           <Button variant="default" radius="xl" component={Link} to="/enquiries">Enquiries</Button>
         )}
@@ -98,11 +106,12 @@ export function QueuePage({ token }: { token: string }) {
 
         <Group justify="space-between" px="lg" py="md" gap="sm">
           <Text size="sm" c="dimmed">{stage?.hint ?? "Finding your work…"}</Text>
-          <TextInput placeholder="Search by company name or reference" value={search} w={300}
+          <TextInput placeholder="Search by name, PACRA number or reference" value={search} w={300}
             onChange={(event) => { setSearch(event.currentTarget.value); update({ search: event.currentTarget.value || null, page: null }) }} />
         </Group>
 
-        {list.error ? <div className="queue-padding"><ApiError error={list.error} /></div> : (
+        {(list.error ?? counts.find((c) => c.error)?.error)
+          ? <div className="queue-padding"><ApiError error={(list.error ?? counts.find((c) => c.error)?.error)!} /></div> : (
           <Table.ScrollContainer minWidth={760}>
             <Table highlightOnHover verticalSpacing="sm" className="queue-table">
               <Table.Thead>
@@ -134,7 +143,7 @@ export function QueuePage({ token }: { token: string }) {
             {debouncedSearch ? 'No applications match your search.' : 'There are no applications at this stage.'}
           </Text>
         )}
-        {list.isPending && <Text c="dimmed" ta="center" py="xl" size="sm">Loading applications…</Text>}
+        {list.isPending && !counts.some((c) => c.error) && <Text c="dimmed" ta="center" py="xl" size="sm">Loading applications…</Text>}
         {totalPages > 1 && (
           <Group justify="center" py="md">
             <Pagination total={totalPages} value={page} onChange={(p) => update({ page: String(p) })} color="teal" size="sm" />

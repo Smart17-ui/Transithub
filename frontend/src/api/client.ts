@@ -63,6 +63,16 @@ export type ListQuery = { statuses: RegistrationStatus[]; search?: string; page?
 
 export const APPLICATIONS = '/api/v1/my/applications'
 
+/** Hands a file to the browser's download. */
+export function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 export const api = {
   // Registrations
   listRegistrations: (token: string, query: ListQuery) => {
@@ -121,16 +131,15 @@ export const api = {
   duplicateFlags: (token: string, id: string) => request<DuplicateFlag[]>(`${reg(id)}/duplicate-flags`, token),
   audit: (token: string, id: string) => request<AuditPage>(`${reg(id)}/audit-events?limit=100&offset=0`, token),
 
+  /** An evidence file's bytes, fetched with the user's token (for preview or download). */
+  evidenceBlob: async (token: string, registrationId: string, evidenceId: string, basePath?: string) =>
+    (await send(`${at({ id: registrationId, basePath })}/evidence/${encodeURIComponent(evidenceId)}/content`,
+      token, { headers: { Accept: '*/*' } })).blob(),
+
   /** Downloads an evidence file through the authenticated API and hands it to the browser. */
   downloadEvidence: async (token: string, registrationId: string, evidenceId: string, fileName: string, basePath?: string) => {
-    const blob = await (await send(`${at({ id: registrationId, basePath })}/evidence/${encodeURIComponent(evidenceId)}/content`,
-      token, { headers: { Accept: '*/*' } })).blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+    const blob = await api.evidenceBlob(token, registrationId, evidenceId, basePath)
+    saveBlob(blob, fileName)
   },
 
   // Verification (AC-R1-VER-01…07)

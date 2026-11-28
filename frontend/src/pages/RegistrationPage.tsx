@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Anchor, Badge, Button, Divider, Group, Loader, Modal, Paper, SimpleGrid, Stack, Stepper, Table, Text, Title,
+  Alert, Anchor, Badge, Button, Divider, Group, Loader, Modal, Paper, Stack, Stepper, Table, Text, Title,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
@@ -10,7 +10,7 @@ import type {
   Representative, VerificationSummary,
 } from '../api/types'
 import {
-  ApiError, CenterMessage, Metric, StatusBadge, actionLabel, evidenceTypeLabels, formatDate, formatDateTime,
+  ApiError, CenterMessage, StatusBadge, actionLabel, evidenceTypeLabels, formatDate, formatDateTime,
   requirementLabel, statusLabels, useStaffNames,
 } from '../components/common'
 import {
@@ -19,6 +19,7 @@ import {
 } from '../components/commands'
 import { DetailsFields, emptyDetails, normalizeDetails } from '../components/DetailsFields'
 import { DraftChecklist, EvidenceUploadDialog, RemoveDialog, RepresentativeDialog, SignatureDialog } from '../components/capture'
+import { DocumentPreview } from '../components/DocumentPreview'
 
 type Dialog =
   | { kind: 'assign' | 'requestInformation' | 'approve' | 'reject' | 'withdraw' | 'audit' }
@@ -29,6 +30,7 @@ type Dialog =
   | { kind: 'representative'; representative: Representative | null }
   | { kind: 'sign'; representative: Representative }
   | { kind: 'upload' }
+  | { kind: 'preview'; evidence: Evidence }
   | { kind: 'remove'; target: { kind: 'representative' | 'evidence'; id: string; label: string } }
 
 /** Registrations before submission carry no verification or decision records. */
@@ -155,22 +157,24 @@ export function RegistrationPage({ token }: { token: string }) {
               canVerify={allowed.has('verify')} onCheck={(source) => setDialog({ kind: 'registryCheck', source })} />
           )}
           <Paper className="panel" radius="lg" p="xl">
-            <Text fw={700} size="lg">Available actions</Text>
-            <Text size="sm" c="dimmed" mt={4}>Determined by your role, the application’s status and segregation-of-duties controls.</Text>
-            <Divider my="md" />
-            {registration.allowedActions.length
-              ? <Stack gap="sm">{registration.allowedActions.map((action) => <div className="action-line" key={action}><span className="action-check">✓</span><Text size="sm">{actionLabel(action)}</Text></div>)}</Stack>
-              : <Text size="sm" c="dimmed">No actions are required from you at this stage.</Text>}
-            <Alert variant="light" color="sky" mt="md" title="Next step">
-              {nextStep(registration, v, name)}
-            </Alert>
-            <Divider my="md" />
-            <SimpleGrid cols={2} spacing="xs">
-              <Metric label="Version" value={`v${registration.version}`} />
-              <Metric label="Channel" value={registration.channel.toLowerCase()} />
-            </SimpleGrid>
-            <Text size="xs" c="dimmed" mt="md">Application ID</Text>
-            <Text size="xs" ff="monospace" mt={4} className="uuid">{registration.id}</Text>
+            <Text fw={700} size="lg">What happens next</Text>
+            <Alert variant="light" color="sky" mt="md">{nextStep(registration, v, name)}</Alert>
+            <Text fw={600} size="sm" mt="lg">What you can do</Text>
+            {registration.allowedActions.filter((a) => a !== 'viewAudit').length
+              ? <Stack gap="xs" mt="xs">{registration.allowedActions.filter((a) => a !== 'viewAudit').map((action) =>
+                  <div className="action-line" key={action}><span className="action-check">→</span><Text size="sm">{actionLabel(action)}</Text></div>)}</Stack>
+              : <Text size="sm" c="dimmed" mt={4}>Nothing is needed from you at this stage.</Text>}
+            <Text size="xs" c="dimmed" mt="xs">Depends on your role and on who has already worked on this application.</Text>
+            <Divider my="lg" />
+            <Text fw={600} size="sm">About this application</Text>
+            <dl className="fact-list">
+              <dt>Reference</dt><dd>{registration.reference}</dd>
+              <dt>How it arrived</dt><dd>{channelLabel(registration.channel)}</dd>
+              <dt>{registration.channel === 'SELF_SERVICE' ? 'Applicant' : 'Prepared by'}</dt><dd>{name(registration.capturedBy)}</dd>
+              <dt>Started</dt><dd>{formatDateTime(registration.createdAt)}</dd>
+              <dt>Last updated</dt><dd>{formatDateTime(registration.updatedAt)}</dd>
+              <dt>Documents</dt><dd>{registration.evidence.length}</dd>
+            </dl>
           </Paper>
         </Stack>
       </div>
@@ -188,6 +192,7 @@ export function RegistrationPage({ token }: { token: string }) {
       {dialog?.kind === 'sign' && <SignatureDialog token={token} registration={registration} representative={dialog.representative} opened onClose={close} />}
       {dialog?.kind === 'upload' && <EvidenceUploadDialog token={token} registration={registration} opened onClose={close} />}
       {dialog?.kind === 'remove' && <RemoveDialog token={token} registration={registration} target={dialog.target} opened onClose={close} />}
+      {dialog?.kind === 'preview' && <DocumentPreview token={token} registrationId={registration.id} evidence={dialog.evidence} onClose={close} />}
       {dialog?.kind === 'audit' && <AuditModal token={token} id={id} onClose={close} name={name} />}
     </Stack>
   )
@@ -330,6 +335,11 @@ function RepresentativesPanel({ registration, editable, onOpen }: {
   )
 }
 
+/** How the application reached TransitHub, in plain words. */
+function channelLabel(channel: string) {
+  return ({ SELF_SERVICE: 'Applied online by the company', ONLINE: 'Entered by our team at the office', FIELD: 'Captured in the field on a tablet' } as Record<string, string>)[channel] ?? channel
+}
+
 /** Who acts next, so no one is left wondering why they have no actions. */
 function nextStep(r: Registration, v: VerificationSummary | undefined, name: (id: string | null | undefined) => string) {
   switch (r.status) {
@@ -376,7 +386,7 @@ function EvidencePanel({ token, registration, assessments, name, canAssess, onAs
                 return (
                   <Table.Tr key={e.id}>
                     <Table.Td>
-                      <Anchor component="button" size="sm" fw={600} onClick={() => download(e)}>{e.fileName}</Anchor>
+                      <Anchor component="button" size="sm" fw={600} onClick={() => onOpen({ kind: 'preview', evidence: e })}>{e.fileName}</Anchor>
                       <Text size="xs" c="dimmed">{evidenceTypeLabels[e.evidenceType]} · {(e.sizeBytes / 1024).toFixed(0)} KB</Text>
                     </Table.Td>
                     <Table.Td><Text size="xs">{name(e.uploadedBy)}</Text><Text size="xs" c="dimmed">{formatDate(e.uploadedAt)}</Text></Table.Td>
@@ -387,8 +397,12 @@ function EvidencePanel({ token, registration, assessments, name, canAssess, onAs
                         : <Text size="xs" c="dimmed">Pending review</Text>}
                     </Table.Td>
                     <Table.Td ta="right">
+                      <Group gap="xs" justify="flex-end" wrap="nowrap">
+                      <Button size="xs" variant="default" onClick={() => onOpen({ kind: 'preview', evidence: e })}>View</Button>
+                      <Anchor component="button" size="xs" onClick={() => download(e)}>Download</Anchor>
                       {canAssess && <Button size="xs" variant="light" color="teal" onClick={() => onAssess(e)}>{assessment ? 'Update review' : 'Review'}</Button>}
                       {editable && <Anchor component="button" size="xs" c="var(--th-danger-text)" onClick={() => onOpen({ kind: 'remove', target: { kind: 'evidence', id: e.id, label: e.fileName } })}>Remove</Anchor>}
+                      </Group>
                     </Table.Td>
                   </Table.Tr>
                 )

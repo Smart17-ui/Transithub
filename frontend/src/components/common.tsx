@@ -1,7 +1,8 @@
-import { Alert, Anchor, Badge, Paper, Text, Title } from '@mantine/core'
+import { Alert, Anchor, Badge, Button, Paper, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api, ApiProblem } from '../api/client'
+import { userManager } from '../auth/oidc'
 import type { EvidenceType, Me, RegistrationStatus } from '../api/types'
 
 export const statusLabels: Record<RegistrationStatus, string> = {
@@ -85,6 +86,8 @@ export function ApiError({ error, onReload }: { error: Error; onReload?: () => v
   if (problem?.code === 'concurrent-modification' || problem?.status === 409) {
     title = 'This application was updated by someone else'
     hint = 'Reload to see the latest version, then try again.'
+  } else if (problem?.code === 'verification-incomplete') {
+    title = 'Not ready to approve yet'
   } else if (problem?.code === 'separation-of-duties') {
     title = 'Action restricted for this application'
     hint = 'You were involved in preparing this application, so a different colleague must complete this step.'
@@ -93,14 +96,26 @@ export function ApiError({ error, onReload }: { error: Error; onReload?: () => v
     hint = 'Contact your administrator if you believe you should have access.'
   } else if (problem?.status === 401) {
     title = 'Your session has expired'
-    hint = 'Please sign in again to continue.'
+    hint = 'For your security you were signed out after a period of inactivity.'
+  }
+  // No TransitHub answer at all: the network failed, the server is down, or
+  // something else answered (a 404 without our problem code).
+  const unreachable = !problem || problem.status >= 502 || (problem.status === 404 && !problem.code)
+  if (unreachable) {
+    title = 'We can’t reach the TransitHub server right now'
+    hint = 'Please try again in a moment.'
   }
   return (
     <Alert color="red" variant="light" mt="md" title={title}>
-      {error.message}
-      {problem?.missing?.length ? <> Outstanding: {problem.missing.map(requirementLabel).join('; ')}.</> : null}
+      {unreachable || problem?.status === 401 ? null : error.message}
+      {problem?.missing?.length ? <> Outstanding: {[...new Set(problem.missing.map(requirementLabel))].join('; ')}.</> : null}
       {hint && <Text size="sm" mt={4}>{hint}</Text>}
       {onReload && problem?.status === 409 && <Anchor component="button" size="sm" mt={4} onClick={onReload}>Reload now</Anchor>}
+      {problem?.status === 401 && (
+        <Button size="xs" radius="xl" color="teal" mt="sm" onClick={() => {
+          void userManager.signinRedirect({ state: { returnTo: window.location.pathname + window.location.search } })
+        }}>Sign in again</Button>
+      )}
     </Alert>
   )
 }
@@ -144,7 +159,7 @@ async function loadMe(token: string): Promise<Me> {
 export function useMe(token: string) {
   const query = useQuery({ queryKey: ['me'], queryFn: () => loadMe(token), staleTime: 60_000 })
   const permissions = new Set(query.data?.permissions ?? [])
-  return { me: query.data, loading: query.isPending, can: (permission: string) => permissions.has(permission) }
+  return { me: query.data, loading: query.isPending, error: query.error, can: (permission: string) => permissions.has(permission) }
 }
 
 /** Staff-facing role names. Internal role codes are unchanged. */

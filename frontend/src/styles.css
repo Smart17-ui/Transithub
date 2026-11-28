@@ -595,3 +595,22 @@ html:root[data-mantine-color-scheme='dark'] .cta-band { border: 1px solid #2E406
   .application-progress { grid-template-columns: repeat(2, 1fr); }
   .application-checklist { grid-template-columns: 1fr; }
 }
+/* Document viewer */
+.document-preview { min-height: 200px; border-radius: 12px; background: var(--page); overflow: hidden; }
+.document-preview-pdf { display: block; width: 100%; height: min(78vh, 900px); border: 0; background: #fff; }
+.document-preview-image { display: block; max-width: 100%; max-height: 78vh; margin: 0 auto; object-fit: contain; }
+
+/* Plain facts: label and value pairs */
+.fact-list { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 10px 0 0; font-size: 14px; }
+.fact-list dt { color: var(--muted); }
+.fact-list dd { margin: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.fact-list-row { grid-template-columns: repeat(4, auto 1fr); }
+@media (max-width: 900px) { .fact-list-row { grid-template-columns: auto 1fr; } }
+
+/* Company records */
+.record-documents { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+/* Approve: what is done and what is left */
+.approve-checklist { padding: 14px 16px; border-radius: 12px; background: var(--page); }
+.approve-check { display: flex; gap: 10px; align-items: flex-start; }
+.approve-check-mark { display: grid; place-items: center; flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--line); color: var(--ink); font-size: 12px; font-weight: 700; }
+.approve-check.is-done .approve-check-mark { background: var(--teal); color: var(--navy); }
