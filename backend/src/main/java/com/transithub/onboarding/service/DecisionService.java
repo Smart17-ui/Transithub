@@ -24,6 +24,7 @@ import com.transithub.onboarding.repository.DecisionRepository;
 import com.transithub.onboarding.repository.VerificationRepository;
 import com.transithub.shared.audit.AuditRecorder;
 import com.transithub.shared.notification.NotificationOutbox;
+import com.transithub.shared.notification.RecipientDirectory;
 import com.transithub.shared.security.CurrentActor;
 import com.transithub.shared.security.SeparationOfDutiesException;
 
@@ -56,13 +57,14 @@ public class DecisionService {
     private final InvitationService invitations;
     private final UserProvisioning users;
     private final Clock clock;
+    private final List<RecipientDirectory> recipients;
     private final Duration appealWindow;
 
     DecisionService(RegistrationService registrations, CompanyRepository companies, DecisionRepository decisions,
                     VerificationRepository verification, VerificationService verificationService,
                     Authorization authorization, CurrentActor currentActor,
                     AuditRecorder audit, NotificationOutbox notifications, InvitationService invitations,
-                    UserProvisioning users, Clock clock,
+                    UserProvisioning users, Clock clock, List<RecipientDirectory> recipients,
                     @Value("${transithub.onboarding.appeal-window-days:30}") int appealWindowDays) {
         this.registrations = registrations;
         this.companies = companies;
@@ -76,6 +78,7 @@ public class DecisionService {
         this.invitations = invitations;
         this.users = users;
         this.clock = clock;
+        this.recipients = recipients;
         this.appealWindow = Duration.ofDays(appealWindowDays);
     }
 
@@ -173,8 +176,14 @@ public class DecisionService {
      */
     private void notifyDecision(CompanyRegistration registration, String template, Map<String, ?> parameters) {
         notifications.enqueue(registration.getCapturedBy(), template, parameters, null);
+        // A self-service applicant is often also the primary director: one message, not two.
+        Optional<String> applicantEmail = registration.getApplicantUserId() == null ? Optional.empty()
+                : recipients.stream().map(d -> d.find(registration.getCapturedBy())).flatMap(Optional::stream)
+                        .map(RecipientDirectory.Contact::email).filter(java.util.Objects::nonNull).findFirst();
         registration.activeRepresentatives().stream()
                 .filter(Representative::isPrimaryContact)
+                .filter(primary -> primary.getEmail() == null || applicantEmail.isEmpty()
+                        || !primary.getEmail().equalsIgnoreCase(applicantEmail.get()))
                 .findFirst()
                 .ifPresent(primary -> notifications.enqueue("representative:" + primary.getId(), template,
                         parameters, null));
